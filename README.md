@@ -4,7 +4,7 @@
 
 `Skill-Adapter` is an evolution management layer designed for **Claude Code** and **OpenClaw**. It handles skill localization, self-iteration, performance evaluation, security scanning, and skill sharing.
 
-[中文文档](./README-ZH.md) | [User Guide](./docs/USER_GUIDE.md) | [API Docs](./docs/API.md)
+[中文文档](./README-ZH.md) | [User Guide](./docs/USER_GUIDE.md) | [API Docs](./docs/API.md) | [Registry Integration](./docs/REGISTRY_INTEGRATION.md)
 
 ---
 
@@ -18,41 +18,6 @@
 
 ---
 
-## Key Features
-
-### 1. Workspace Deep Binding
-
-* **Space Isolation:** Automatically injects Workspace path constraints to prevent unauthorized operations.
-* **Tech Stack Alignment:** Dynamically adjusts Skill operation preferences based on project structure.
-
-### 2. Session Evolution Engine
-
-* **Behavior Learning:** Analyzes session logs to extract user intent from manual corrections.
-* **Adaptive Patches:** Automatically updates Skill's System Prompt, becoming "more intuitive with use".
-* **Version Tags:** Generates semantic version tags based on evolution metrics (e.g., `v1.2.0-cost-15p`).
-
-### 3. Security Evaluation
-
-* **Sensitive Info Detection:** Scans for API keys, passwords, tokens, and secrets.
-* **Dangerous Operation Identification:** Detects file deletion, system commands, and code execution.
-* **Permission Boundary Check:** Validates skill access controls against workspace constraints.
-* **Risk Assessment Report:** Generates comprehensive risk ratings (high/medium/low).
-
-### 4. Skill Sharing
-
-* **Export/Import:** JSON and YAML format support with full metadata.
-* **Local Registry:** Built-in registry server for team collaboration.
-* **ZIP Packaging:** Skills are packaged as downloadable ZIP files.
-
-### 5. Discovery & Recommendations
-
-* **Hot Skills:** Browse trending skills from skills.sh and ClawHub.
-* **Smart Search:** Find skills by keywords, tags, or descriptions.
-* **Insight Extraction:** Extract best practices and patterns from popular skills.
-* **Local Recommendations:** Get improvement suggestions based on your installed skills.
-
----
-
 ## Quick Start
 
 ### Installation
@@ -61,29 +26,50 @@
 npm install -g skill-adapter
 ```
 
+### Initialize
+
+```bash
+# Initialize configuration
+sa init
+
+# Show current configuration
+sa init --show
+```
+
 ### Core Commands
 
 ```bash
-# Install a skill (auto-detect source type)
-sa get frontend-design
-sa get https://skills.sh/anthropics/skills/frontend-design
-sa get ./my-skill.json
+# Discover hot skills
+sa import
 
-# Discover skills (no query = hot skills)
-sa find
-sa find "code review"
+# Import a skill
+sa import docker-env
+sa import ~/.openclaw/skills/docker-env
+sa import ./my-skill.zip
 
-# View skill info
-sa info              # List all installed
-sa info my-skill     # View details
+# View all available skills (OpenClaw, Claude Code, imported)
+sa info
+
+# View specific skill details
+sa info docker-env
 
 # Run evolution analysis
-sa evolve my-skill
-sa evolve my-skill --apply
+sa evolve docker-env
+sa evolve docker-env --apply
 
-# Share a skill
-sa share my-skill --output ./my-skill.json
-sa share my-skill --registry http://localhost:3000
+# View version history
+sa log docker-env
+sa log docker-env --stat
+
+# Export skill
+sa share docker-env -o docker-env.zip
+
+# Create Pull Request
+sa share docker-env --pr
+
+# Export from platforms
+sa export                    # Export all
+sa export docker-env         # Export specific skill
 ```
 
 ---
@@ -92,14 +78,14 @@ sa share my-skill --registry http://localhost:3000
 
 | Command | Description |
 |---------|-------------|
-| `sa get <source>` | Install/import skill (auto-detect source) |
-| `sa find [query]` | Discover skills (no query = hot) |
-| `sa info [skill]` | View skill details (no skill = list all) |
+| `sa init` | Initialize configuration |
+| `sa import [source]` | Import or discover skills |
+| `sa info [skill]` | View skill info (default: all platforms) |
 | `sa evolve [skill]` | Run evolution analysis |
-| `sa share <skill>` | Export or publish skill |
-| `sa scan <file>` | Security scan a file |
-| `sa workspace` | Analyze current workspace |
-| `sa patch <action>` | Manage skill patches (advanced) |
+| `sa share [skill]` | Export or publish skill |
+| `sa export [skill]` | Export from platforms |
+| `sa log [skill]` | View version history |
+| `sa scan [file]` | Security scan |
 
 ---
 
@@ -116,35 +102,43 @@ Skill-Adapter automatically generates semantic version tags based on evolution m
 
 ---
 
-## Local Registry Server
+## Configuration
 
-Start your own skill registry:
+### Environment Variables
 
 ```bash
-cd registry-server
-npm install
-node server.js
+export SKILL_ADAPTER_REPO="https://github.com/user/skills"
+export SKILL_ADAPTER_REGISTRY="http://localhost:3000"
+export SKILL_ADAPTER_PLATFORM="skills-sh"
 ```
 
-Server runs at `http://localhost:3000` with:
-- `GET /api/skills` - List/search skills
-- `GET /api/skills/:name` - Get details
-- `GET /api/skills/:name/download` - Download as ZIP
-- `POST /api/skills` - Publish skill
-- `DELETE /api/skills/:name` - Delete skill
+### Config File
+
+Config stored at `~/.skill-adapter.json`:
+
+```json
+{
+  "skillsRepo": "https://github.com/user/skills",
+  "registryUrl": "http://localhost:3000",
+  "defaultPlatform": "skills-sh"
+}
+```
 
 ---
 
-## Evaluation Summary Example
+## Registry Integration
 
-After running `sa evolve`, you'll receive feedback like:
+Skill-Adapter can work with any compliant registry. See [Registry Integration Guide](./docs/REGISTRY_INTEGRATION.md) for building your own registry.
 
-| Metric | Baseline | Evolved | Delta | Status |
-|--------|----------|---------|-------|--------|
-| **Avg User Rounds** | 5.2 | 2.1 | **-60%** | ✅ Improved |
-| **Tool Calls** | 15 | 6 | **-60%** | ✅ Improved |
-| **Token Consumption** | 12.4k | 8.8k | **-29%** | ✅ Optimized |
-| **Context Load** | 1.1k | 2.3k | **+109%** | ⚠️ Trade-off |
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/skills` | GET | List/search skills |
+| `/api/skills/:name` | GET | Get skill details |
+| `/api/skills/:name/download` | GET | Download as ZIP |
+| `/api/skills` | POST | Publish skill |
+| `/api/leaderboard` | GET | Get hot skills |
 
 ---
 
@@ -153,27 +147,25 @@ After running `sa evolve`, you'll receive feedback like:
 ```
 skill-adapter/
 ├── src/
+│   ├── cli.ts              # CLI entry point
+│   ├── index.ts            # Module exports
 │   ├── core/
-│   │   ├── security/      # Security evaluation module
-│   │   ├── sharing/       # Export/import and registry
-│   │   ├── discovery/     # Skill discovery and recommendations
-│   │   ├── versioning/    # Semantic version management
-│   │   ├── config/        # Agent detection
-│   │   ├── analyzer.ts    # Session semantic analysis
-│   │   ├── patcher.ts     # Skill injection engine
-│   │   ├── workspace.ts   # Space rule parsing
-│   │   ├── evaluator.ts   # Evolution effect evaluation
-│   │   ├── telemetry.ts   # Data collection
-│   │   └── database.ts    # Evolution data storage
-│   ├── types/             # TypeScript type definitions
-│   └── report/
-│       └── summary.ts     # Markdown report generator
-├── registry-server/       # Local registry server
-│   ├── server.js          # Express server
-│   └── routes/skills.js   # API routes
-├── docs/                  # Documentation
-│   ├── USER_GUIDE.md      # User guide
-│   └── API.md             # API documentation
+│   │   ├── security/       # Security evaluation
+│   │   ├── sharing/        # Export/import and registry
+│   │   ├── discovery/      # Skill discovery
+│   │   ├── versioning/     # Semantic versioning
+│   │   ├── config/         # Agent detection
+│   │   ├── analyzer.ts     # Session analysis
+│   │   ├── patcher.ts      # Skill injection
+│   │   ├── workspace.ts    # Workspace rules
+│   │   ├── evaluator.ts    # Evolution evaluation
+│   │   ├── telemetry.ts    # Data collection
+│   │   └── database.ts     # Evolution storage
+│   └── types/              # TypeScript definitions
+├── docs/
+│   ├── USER_GUIDE.md
+│   ├── API.md
+│   └── REGISTRY_INTEGRATION.md
 ├── package.json
 └── tsconfig.json
 ```
@@ -189,11 +181,13 @@ npm install
 # Build
 npm run build
 
-# Development mode
-npm run dev
-
 # Run CLI
 node dist/cli.js --help
+
+# Test commands
+node dist/cli.js info
+node dist/cli.js import
+node dist/cli.js evolve
 ```
 
 ---
@@ -202,7 +196,7 @@ node dist/cli.js --help
 
 - [User Guide](./docs/USER_GUIDE.md) - Complete usage instructions
 - [API Documentation](./docs/API.md) - Programmatic API reference
-- [Registry Server](./registry-server/README.md) - Local registry setup
+- [Registry Integration](./docs/REGISTRY_INTEGRATION.md) - Build your own registry
 
 ---
 
