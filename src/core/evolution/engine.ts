@@ -1,5 +1,5 @@
 /**
- * AI Evolution Engine - AI-powered skill evolution
+ * SA Agent Evolution Engine - SA Agent-powered skill evolution
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -7,9 +7,9 @@ import { modelConfigLoader } from '../model-config-loader';
 import { buildEvolutionPrompt, buildSummaryPrompt } from './prompts';
 
 /**
- * AI-generated recommendation
+ * SA Agent-generated recommendation
  */
-export interface AIRecommendation {
+export interface SAAgentRecommendation {
   type: 'env_adaptation' | 'style_injection' | 'error_avoidance' | 'best_practice';
   priority: 'high' | 'medium' | 'low';
   title: string;
@@ -19,10 +19,10 @@ export interface AIRecommendation {
 }
 
 /**
- * AI response structure
+ * SA Agent response structure
  */
-interface AIResponse {
-  recommendations: AIRecommendation[];
+interface SAAgentResponse {
+  recommendations: SAAgentRecommendation[];
 }
 
 /**
@@ -32,9 +32,9 @@ export interface EvolutionResult {
   skillName: string;
   oldVersion: string;
   newVersion: string;
-  recommendations: AIRecommendation[];
-  appliedRecommendations: AIRecommendation[];
-  skippedRecommendations: AIRecommendation[];
+  recommendations: SAAgentRecommendation[];
+  appliedRecommendations: SAAgentRecommendation[];
+  skippedRecommendations: SAAgentRecommendation[];
   summary: string;
 }
 
@@ -48,9 +48,9 @@ export interface StreamCallbacks {
 }
 
 /**
- * AI Evolution Engine
+ * SA Agent Evolution Engine
  */
-export class AIEvolutionEngine {
+export class SAAgentEvolutionEngine {
   private client: Anthropic | null = null;
   private modelId: string = 'claude-sonnet-4-6';
 
@@ -70,7 +70,7 @@ export class AIEvolutionEngine {
   }
 
   /**
-   * Check if AI is available
+   * Check if SA Agent is available
    */
   isAvailable(): boolean {
     return this.client !== null;
@@ -87,7 +87,7 @@ export class AIEvolutionEngine {
   }
 
   /**
-   * Generate evolution recommendations using AI with streaming
+   * Generate evolution recommendations using SA Agent with streaming
    */
   async generateRecommendations(
     context: {
@@ -98,9 +98,9 @@ export class AIEvolutionEngine {
       workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string };
     },
     callbacks?: StreamCallbacks
-  ): Promise<AIRecommendation[]> {
+  ): Promise<SAAgentRecommendation[]> {
     if (!this.client) {
-      throw new Error('AI model not configured. Run `sa config` to set up model.');
+      throw new Error('SA Agent model not configured. Run `sa config` to set up model.');
     }
 
     const prompt = buildEvolutionPrompt(context);
@@ -141,7 +141,7 @@ export class AIEvolutionEngine {
 
       return recommendations;
     } catch (error: any) {
-      throw new Error(`AI request failed: ${error.message}`);
+      throw new Error(`SA Agent request failed: ${error.message}`);
     }
   }
 
@@ -154,9 +154,9 @@ export class AIEvolutionEngine {
     soulPreferences?: { communicationStyle?: string; boundaries?: string[] };
     memoryRules?: Array<{ category: string; rule: string }>;
     workspaceInfo?: { languages?: string[]; frameworks?: string[]; packageManager?: string };
-  }): Promise<AIRecommendation[]> {
+  }): Promise<SAAgentRecommendation[]> {
     if (!this.client) {
-      throw new Error('AI model not configured.');
+      throw new Error('SA Agent model not configured.');
     }
 
     const prompt = buildEvolutionPrompt(context);
@@ -172,27 +172,27 @@ export class AIEvolutionEngine {
   }
 
   /**
-   * Parse AI response to recommendations
+   * Parse SA Agent response to recommendations
    */
-  private parseRecommendations(text: string): AIRecommendation[] {
+  private parseRecommendations(text: string): SAAgentRecommendation[] {
     // Extract JSON from response
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[1]) as AIResponse;
+        const parsed = JSON.parse(jsonMatch[1]) as SAAgentResponse;
         return parsed.recommendations || [];
       } catch {}
     }
 
     // Try direct JSON parse
     try {
-      const parsed = JSON.parse(text) as AIResponse;
+      const parsed = JSON.parse(text) as SAAgentResponse;
       return parsed.recommendations || [];
     } catch {
       const objectMatch = text.match(/\{[\s\S]*"recommendations"[\s\S]*\}/);
       if (objectMatch) {
         try {
-          const parsed = JSON.parse(objectMatch[0]) as AIResponse;
+          const parsed = JSON.parse(objectMatch[0]) as SAAgentResponse;
           return parsed.recommendations || [];
         } catch {}
       }
@@ -201,7 +201,7 @@ export class AIEvolutionEngine {
   }
 
   /**
-   * Generate evolution summary using AI
+   * Generate evolution summary using SA Agent
    */
   async generateSummary(context: {
     skillName: string;
@@ -228,7 +228,40 @@ export class AIEvolutionEngine {
       return `${context.skillName} evolved from ${context.oldVersion} to ${context.newVersion}`;
     }
   }
+
+  /**
+   * Get quick suggestion for a skill (one-line hint)
+   * Used before full evolution to show user what could be improved
+   */
+  async getQuickSuggestion(skillContent: string): Promise<string> {
+    if (!this.client) {
+      return 'Consider adding more examples and error handling';
+    }
+
+    const prompt = `Analyze this skill content briefly. Give ONE concise suggestion (max 60 chars) for improvement.
+
+Skill content (first 2000 chars):
+${skillContent.slice(0, 2000)}
+
+Reply format: Just the suggestion, no explanation. Example: "Add error handling examples" or "Include TypeScript types"`;
+
+    try {
+      const response = await this.client.messages.create({
+        model: this.modelId,
+        max_tokens: 100,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const textBlock = response.content.find(block => block.type === 'text');
+      if (textBlock && 'text' in textBlock) {
+        return textBlock.text.trim().slice(0, 80);
+      }
+      return 'Consider adding more examples';
+    } catch {
+      return 'Consider adding more examples';
+    }
+  }
 }
 
 // Singleton
-export const aiEvolutionEngine = new AIEvolutionEngine();
+export const saAgentEvolutionEngine = new SAAgentEvolutionEngine();

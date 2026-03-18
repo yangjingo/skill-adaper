@@ -18,7 +18,8 @@
  * - sa share <skill>     Export/publish skill (create PR)
  *
  * Evolution:
- * - sa evolve [skill]    Run evolution analysis (includes workspace)
+ * - sa evolve [skill]    Run evolution analysis (shows suggestions first)
+ * - sa evolve [skill] --quick  Skip suggestions, start immediately
  * - sa summary <skill>   View evolution metrics table
  * - sa log [skill]       View version history (git-log style)
  */
@@ -36,12 +37,13 @@ import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, evaluator,
 
 // Evolution Engine
 import { EvolutionEngine, evolutionEngine, EvolutionRecommendation } from './core/evolution-engine';
-import { aiEvolutionEngine, AIRecommendation, modelConfigLoader } from './core/evolution';
+import { saAgentEvolutionEngine, SAAgentRecommendation, modelConfigLoader } from './core/evolution';
 
 // New modules
 import { securityEvaluator } from './core/security';
 import { skillExporter, skillRegistry } from './core/sharing';
 import { platformFetcher, recommendationEngine, skillAnalyzer } from './core/discovery';
+import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
 import { agentDetector } from './core/config';
 import { configManager, UserPreferences } from './core/config-manager';
@@ -1077,7 +1079,8 @@ program
   .option('--dry-run', 'Preview changes without applying', false)
   .option('-v, --verbose', 'Show detailed output', false)
   .option('--debug', 'Show full technical output', false)
-  .action(async (skillName: string | undefined, options: { last: string; apply: boolean; detail: boolean; dryRun: boolean; verbose: boolean; debug: boolean }) => {
+  .option('--quick', 'Skip suggestions and start evolution immediately', false)
+  .action(async (skillName: string | undefined, options: { last: string; apply: boolean; detail: boolean; dryRun: boolean; verbose: boolean; debug: boolean; quick: boolean }) => {
     const db = new EvolutionDatabase();
     const preferences = configManager.getPreferences();
 
@@ -1254,13 +1257,13 @@ program
     const { content: skillContent, dir: skillDir, source: skillSource, foundInDb, needsImport } = skillLocation;
 
     // ═══════════════════════════════════════════
-    // STEP 1: AI Configuration
+    // STEP 1: SA Agent Configuration
     // ═══════════════════════════════════════════
-    const useAI = aiEvolutionEngine.isAvailable();
-    const modelInfo = aiEvolutionEngine.getModelInfo();
+    const useAI = saAgentEvolutionEngine.isAvailable();
+    const modelInfo = saAgentEvolutionEngine.getModelInfo();
 
     if (useAI) {
-      console.log('\n📋 AI Configuration:');
+      console.log('\n📋 SA Agent Configuration:');
       console.log(`   ├─ Model: ${modelInfo.modelId}`);
 
       // Load config to show endpoint
@@ -1285,6 +1288,54 @@ program
     }
     if (needsImport) {
       console.log(`   📌 Will auto-import to database`);
+    }
+
+    // ═══════════════════════════════════════════
+    // Smart Recommendations (unless --quick)
+    // ═══════════════════════════════════════════
+    if (!options.quick) {
+      console.log('\n' + '─'.repeat(50));
+      console.log('💡 Smart Recommendations');
+      console.log('─'.repeat(50));
+      console.log('   (Use --quick to skip this step)');
+
+      // Stream progress display
+      let progressText = '🔍 Analyzing skill...';
+      const progressInterval = setInterval(() => {
+        process.stdout.write('.');
+      }, 300);
+
+      // Run both tasks in parallel for better UX
+      const [aiSuggestion, relatedSkills] = await Promise.all([
+        // AI suggestion for skill improvement
+        useAI ? saAgentEvolutionEngine.getQuickSuggestion(skillContent) : Promise.resolve('Consider adding more examples and error handling'),
+        // Related skills from skills.sh
+        platformFetcher.search(skillName, { limit: 2, platforms: ['skills-sh'] }).catch(() => [] as RemoteSkill[])
+      ]);
+
+      clearInterval(progressInterval);
+      console.log(' ✓\n');
+
+      // Display AI suggestion
+      console.log(`   💡 Suggestion:`);
+      console.log(`      → ${aiSuggestion}`);
+
+      // Display related skills
+      if (relatedSkills.length > 0) {
+        console.log(`\n   🎯 Related skills:`);
+        relatedSkills.forEach(skill => {
+          console.log(`      • ${skill.name} (${skill.stats.downloads} downloads)`);
+        });
+      } else {
+        console.log(`\n   🎯 Related skills: (none found)`);
+      }
+
+      console.log('\n' + '─'.repeat(50));
+
+      // Give user a moment to see suggestions
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log('\n🚀 Starting evolution...');
     }
 
     // ═══════════════════════════════════════════
@@ -1313,7 +1364,7 @@ program
     // Build evolution context
     let evolutionContext;
     let evolutionRecommendations: EvolutionRecommendation[] = [];
-    let aiRecommendations: AIRecommendation[] = [];
+    let saAgentRecommendations: SAAgentRecommendation[] = [];
 
     try {
       const daysToAnalyze = parseInt(options.last) || 10;
@@ -1351,19 +1402,19 @@ program
     console.log(`   └─ Session patterns: ${evolutionContext.sessionPatterns.toolSequences.length} patterns`);
 
     // ═══════════════════════════════════════════
-    // STEP 5: AI Evolution with Streaming
+    // STEP 5: SA Agent Evolution with Streaming
     // ═══════════════════════════════════════════
     console.log('\n' + '─'.repeat(60));
-    console.log('🤖 AI Evolution Process');
+    console.log('🤖 SA Agent Evolution Process');
     console.log('─'.repeat(60) + '\n');
 
-    const thinkingSpinner = ora('Connecting to AI model...').start();
+    const thinkingSpinner = ora('Connecting to SA Agent model...').start();
     let thinkingBuffer = '';
     let thinkingStarted = false;
     let lineBuffer = ''; // Buffer for incomplete lines
 
     try {
-      aiRecommendations = await aiEvolutionEngine.generateRecommendations({
+      saAgentRecommendations = await saAgentEvolutionEngine.generateRecommendations({
         skillName,
         skillContent,
         soulPreferences: {
@@ -1382,7 +1433,7 @@ program
         onThinking: (text) => {
           if (!thinkingStarted) {
             thinkingSpinner.stop();
-            console.log('\n💭 AI Thinking (streaming):\n');
+            console.log('\n💭 SA Agent Thinking (streaming):\n');
             console.log('─'.repeat(40));
             thinkingStarted = true;
           }
@@ -1420,18 +1471,18 @@ program
         },
       });
 
-      // Debug: Check if AI generated recommendations
-      if (aiRecommendations.length === 0) {
-        console.log('⚠️ AI generated 0 recommendations. Check if model output JSON correctly.\n');
+      // Debug: Check if SA Agent generated recommendations
+      if (saAgentRecommendations.length === 0) {
+        console.log('⚠️ SA Agent generated 0 recommendations. Check if model output JSON correctly.\n');
       } else {
-        console.log(`✅ Generated ${aiRecommendations.length} recommendation(s)\n`);
+        console.log(`✅ Generated ${saAgentRecommendations.length} recommendation(s)\n`);
       }
 
     } catch (aiError) {
       if (thinkingSpinner.isSpinning) {
-        thinkingSpinner.fail('AI generation failed');
+        thinkingSpinner.fail('SA Agent generation failed');
       } else {
-        console.log('\n❌ AI generation failed');
+        console.log('\n❌ SA Agent generation failed');
       }
       console.log('Falling back to rule-based recommendations...');
       evolutionRecommendations = evolutionEngine.generateRecommendations(evolutionContext);
@@ -1440,7 +1491,7 @@ program
     // ═══════════════════════════════════════════
     // STEP 6: Display Recommendations
     // ═══════════════════════════════════════════
-    const allRecommendations = aiRecommendations.length > 0 ? aiRecommendations :
+    const allRecommendations = saAgentRecommendations.length > 0 ? saAgentRecommendations :
                                evolutionRecommendations.length > 0 ? evolutionRecommendations : [];
 
     if (allRecommendations.length > 0) {
