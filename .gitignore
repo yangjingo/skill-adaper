@@ -44,3 +44,6 @@ registry-server/node_modules/
 # Temporary files
 *.tmp
 *.temp
+
+# Documentation (local only)
+docs/
