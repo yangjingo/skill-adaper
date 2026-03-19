@@ -46,4 +46,5 @@ registry-server/node_modules/
 *.temp
 
 # Documentation (local only)
-docs/
+# docs/
+# tests/
