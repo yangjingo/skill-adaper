@@ -33,7 +33,7 @@ import { createWriteStream } from 'fs';
 import ora from 'ora';
 
 // Core modules
-import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, evaluator, EvolutionDatabase, EvolutionRecord, summaryGenerator, VERSION } from './index';
+import { telemetry, WorkspaceAnalyzer, SessionAnalyzer, skillPatcher, EvolutionDatabase, EvolutionRecord, summaryGenerator, VERSION } from './index';
 
 // Evolution Engine
 import { EvolutionEngine, evolutionEngine, EvolutionRecommendation } from './core/evolution-engine';
@@ -107,12 +107,36 @@ program
   .option('--registry <url>', 'Default registry URL')
   .option('--show', 'Show current configuration', false)
   .action((options: { repo?: string; registry?: string; show: boolean }) => {
+    // Show model config status
+    const modelStatus = modelConfigLoader.getStatus();
+
     if (options.show) {
       console.log('📋 Current Configuration\n');
       console.log(`  Skills Repo:  ${CONFIG.skillsRepo}`);
       console.log(`  Registry:     ${CONFIG.registryUrl}`);
       console.log(`  Platform:     ${CONFIG.defaultPlatform}`);
       console.log(`  Config File:  ${configPath}`);
+
+      // Show AI Model status
+      console.log('\n🤖 AI Model:');
+      if (modelStatus.configured) {
+        console.log(`   Status:      ✅ Configured`);
+        console.log(`   Provider:    ${modelStatus.source}`);
+        console.log(`   Model:       ${modelStatus.model}`);
+        console.log(`   Endpoint:    ${modelStatus.endpoint}`);
+        // Show if API key is set (masked)
+        const configResult = modelConfigLoader.load();
+        if (configResult.success && configResult.config?.apiKey) {
+          const key = configResult.config.apiKey;
+          const maskedKey = key.length > 8 ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : '****';
+          console.log(`   API Key:     ${maskedKey}`);
+        } else {
+          console.log(`   API Key:     ⚠️  Not set`);
+        }
+      } else {
+        console.log(`   Status:      ⚠️  Not configured`);
+        console.log('\n   Run `sa init` to see setup guide.');
+      }
       return;
     }
 
@@ -138,10 +162,67 @@ program
     console.log(`   Registry:     ${CONFIG.registryUrl}`);
     console.log(`   Config File:  ${configPath}`);
 
+    // Show AI Model status and guidance
+    console.log('\n🤖 AI Model:');
+    if (modelStatus.configured) {
+      console.log(`   Status:      ✅ Configured`);
+      console.log(`   Provider:    ${modelStatus.source}`);
+      console.log(`   Model:       ${modelStatus.model}`);
+      console.log(`   Endpoint:    ${modelStatus.endpoint}`);
+      // Show if API key is set (masked)
+      const configResult = modelConfigLoader.load();
+      if (configResult.success && configResult.config?.apiKey) {
+        const key = configResult.config.apiKey;
+        const maskedKey = key.length > 8 ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : '****';
+        console.log(`   API Key:     ${maskedKey}`);
+      } else {
+        console.log(`   API Key:     ⚠️  Not set`);
+      }
+    } else {
+      console.log(`   Status:      ⚠️  Not configured`);
+      console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+      console.log('║                    🚨 AI Model Setup Required                     ║');
+      console.log('╠══════════════════════════════════════════════════════════════════╣');
+      console.log('║                                                                   ║');
+      console.log('║  Skill-Adapter needs AI model for evolve/scan/recommend.         ║');
+      console.log('║                                                                   ║');
+      console.log('║  Choose one option below:                                        ║');
+      console.log('║                                                                   ║');
+      console.log('║  Option 1: Claude Code (Recommended)                             ║');
+      console.log('║  ─────────────────────────────────────                           ║');
+      console.log('║  Create ~/.claude/settings.json:                                 ║');
+      console.log('║                                                                   ║');
+      console.log('║    {                                                             ║');
+      console.log('║      "env": {                                                    ║');
+      console.log('║        "ANTHROPIC_AUTH_TOKEN": "your-api-key",                  ║');
+      console.log('║        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6"    ║');
+      console.log('║      }                                                           ║');
+      console.log('║    }                                                             ║');
+      console.log('║                                                                   ║');
+      console.log('║  Option 2: Custom Endpoint (Alibaba DashScope, etc.)             ║');
+      console.log('║  ────────────────────────────────────────────────                ║');
+      console.log('║    {                                                             ║');
+      console.log('║      "env": {                                                    ║');
+      console.log('║        "ANTHROPIC_AUTH_TOKEN": "your-token",                    ║');
+      console.log('║        "ANTHROPIC_BASE_URL": "https://your-endpoint",           ║');
+      console.log('║        "ANTHROPIC_DEFAULT_SONNET_MODEL": "your-model"           ║');
+      console.log('║      }                                                           ║');
+      console.log('║    }                                                             ║');
+      console.log('║                                                                   ║');
+      console.log('║  Option 3: Environment Variables                                 ║');
+      console.log('║  ─────────────────────────────────                               ║');
+      console.log('║    export ANTHROPIC_AUTH_TOKEN="your-api-key"                   ║');
+      console.log('║    export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4-6"    ║');
+      console.log('║    export ANTHROPIC_BASE_URL="https://api.anthropic.com"        ║');
+      console.log('║                                                                   ║');
+      console.log('╚══════════════════════════════════════════════════════════════════╝');
+    }
+
     console.log('\n💡 Environment Variables:');
     console.log('   SKILL_ADAPTER_REPO      - Skills repository URL');
     console.log('   SKILL_ADAPTER_REGISTRY  - Default registry URL');
     console.log('   SKILL_ADAPTER_PLATFORM  - Default platform');
+    console.log('   ANTHROPIC_AUTH_TOKEN    - AI model API key (required for evolve/scan/recommend)');
   });
 
 // ============================================
@@ -2395,7 +2476,12 @@ program
           soulLoaded: t.soulLoaded || false,
           memoryLoaded: t.memoryLoaded || false,
           languages: t.workspaceAnalysis?.languages || [],
-          packageManager: t.workspaceAnalysis?.packageManager || '-'
+          packageManager: t.workspaceAnalysis?.packageManager || '-',
+          avgUserRounds: t.avgUserRounds || 0,
+          avgToolCalls: t.avgToolCalls || 0,
+          totalTokenInput: t.totalTokenInput || 0,
+          totalTokenOutput: t.totalTokenOutput || 0,
+          avgContextLoad: t.avgContextLoad || 0,
         };
       } catch {
         return null;
@@ -2851,6 +2937,10 @@ program
             lineBuffer += text;
             const lines = lineBuffer.split('\n');
             lineBuffer = lines.pop() || '';
+
+            // Debug: Log what's being filtered
+            console.log('DEBUG lines:', lines.map(l => `"${l}" (${l.length} chars, trimmed: "${l.trim()}")`));
+
             const filteredLines = lines.filter(line => !isSeparatorLine(line));
             if (filteredLines.length > 0) {
               process.stdout.write(filteredLines.join('\n') + '\n');
