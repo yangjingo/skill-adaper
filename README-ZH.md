@@ -69,24 +69,40 @@ sa import ./suspicious-skill.md  # 发现问题会发出警告
 npm install -g @yangjingo/skill-adapter
 ```
 
-### 1. 适配并安装
+### 完整工作流示例
+
+以下以 [find-skills](https://skills.sh/vercel-labs/agent-skills/find-skills) 技能为例，展示完整的使用流程：
+
+#### 1. 发现技能
 
 ```bash
-sa install https://github.com/public/fs-skill.git
+# 浏览热门技能
+sa import
+
+# 或搜索特定技能
+sa import find-skills
 ```
 
-### 2. 执行进化与评估
+#### 2. 扫描安全
+
+导入时自动扫描，或手动扫描：
+
+```bash
+sa scan ~/.claude/skills/find-skills/SKILL.md
+```
+
+#### 3. 执行进化与评估
 
 在使用一段时间后，运行进化命令：
 
 ```bash
-sa evolve --last 10 --analyze
+sa evolve find-skills --last 10
 ```
 
-### 3. 查看效能总结
+#### 4. 查看效能总结
 
 ```bash
-sa summary fs-skill
+sa summary find-skills
 ```
 
 ---
