@@ -23,7 +23,7 @@
 ### Installation
 
 ```bash
-npm install -g skill-adapter
+npm install -g @yangjingo/skill-adapter
 ```
 
 ### Initialize
