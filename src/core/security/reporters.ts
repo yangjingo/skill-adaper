@@ -38,10 +38,11 @@ export class SecurityReporters {
    */
   generateTextReport(result: SecurityScanResult): string {
     const lines: string[] = [];
+    const divider = '─'.repeat(60);
 
-    lines.push('═'.repeat(60));
+    lines.push(divider);
     lines.push('  SKILL SECURITY SCAN REPORT');
-    lines.push('═'.repeat(60));
+    lines.push(divider);
     lines.push('');
     lines.push(`Skill: ${result.skillName}`);
     if (result.skillVersion) {
@@ -50,44 +51,16 @@ export class SecurityReporters {
     lines.push(`Scan Time: ${result.scanTimestamp.toISOString()}`);
     lines.push('');
 
-    // Risk Assessment
-    lines.push('─'.repeat(40));
-    lines.push('  RISK ASSESSMENT');
-    lines.push('─'.repeat(40));
-    lines.push('');
-    lines.push(`Overall Risk: ${this.getRiskEmoji(result.riskAssessment.overallRisk)} ${result.riskAssessment.overallRisk.toUpperCase()}`);
-    lines.push(`Risk Score: ${result.riskAssessment.riskScore}/100`);
-    lines.push('');
-    lines.push(`Summary: ${result.riskAssessment.summary}`);
-    lines.push('');
-
-    // RED FLAGS Section (skill-vetter style)
+    // Keep HIGH findings for risk scoring/verdict, but suppress verbose terminal listing.
     const redFlags = [...result.dangerousOperationFindings, ...result.sensitiveInfoFindings]
       .filter(f => f.severity === 'high');
-
-    if (redFlags.length > 0) {
-      lines.push('─'.repeat(40));
-      lines.push('  🚨 RED FLAGS');
-      lines.push('─'.repeat(40));
-      lines.push('');
-
-      for (const flag of redFlags) {
-        const desc = 'description' in flag ? flag.description : flag.type;
-        lines.push(`  [HIGH] ${flag.type}`);
-        lines.push(`    Description: ${desc}`);
-        if (flag.location.line) {
-          lines.push(`    Location: Line ${flag.location.line}`);
-        }
-        lines.push('');
-      }
-    }
 
     // Sensitive Information Findings (non-high)
     const sensitiveNonHigh = result.sensitiveInfoFindings.filter(f => f.severity !== 'high');
     if (sensitiveNonHigh.length > 0) {
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('  SENSITIVE INFORMATION FINDINGS');
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('');
 
       for (const finding of sensitiveNonHigh) {
@@ -105,9 +78,9 @@ export class SecurityReporters {
     // Dangerous Operation Findings (non-high)
     const dangerousNonHigh = result.dangerousOperationFindings.filter(f => f.severity !== 'high');
     if (dangerousNonHigh.length > 0) {
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('  DANGEROUS OPERATIONS');
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('');
 
       for (const finding of dangerousNonHigh) {
@@ -122,9 +95,9 @@ export class SecurityReporters {
 
     // Permission Issues
     if (result.permissionIssues.length > 0) {
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('  PERMISSION ISSUES');
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('');
 
       for (const issue of result.permissionIssues) {
@@ -139,18 +112,18 @@ export class SecurityReporters {
     }
 
     // Risk Classification (skill-vetter style)
-    lines.push('─'.repeat(40));
+    lines.push(divider);
     lines.push('  RISK CLASSIFICATION');
-    lines.push('─'.repeat(40));
+    lines.push(divider);
     lines.push('');
     lines.push(`  ${this.getRiskClassification(result.riskAssessment.overallRisk, redFlags.length)}`);
     lines.push('');
 
     // Recommendations
     if (result.riskAssessment.recommendations?.length > 0) {
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('  RECOMMENDATIONS');
-      lines.push('─'.repeat(40));
+      lines.push(divider);
       lines.push('');
 
       for (let i = 0; i < result.riskAssessment.recommendations.length; i++) {
@@ -159,8 +132,19 @@ export class SecurityReporters {
       lines.push('');
     }
 
+    if (!result.passed) {
+      lines.push(divider);
+      lines.push('  NEXT STEPS');
+      lines.push(divider);
+      lines.push('');
+      lines.push(`  1. sa scan <skill> --repair`);
+      lines.push(`  2. sa scan <skill> --repair --apply`);
+      lines.push(`  3. Re-run scan after reviewing the repaired output`);
+      lines.push('');
+    }
+
     // Final Verdict
-    lines.push('═'.repeat(60));
+    lines.push(divider);
     if (result.passed) {
       lines.push('  ✓ SCAN PASSED');
       lines.push('  ✅ SAFE TO INSTALL');
@@ -171,7 +155,7 @@ export class SecurityReporters {
       lines.push('  ⚠ SCAN PASSED WITH WARNINGS');
       lines.push('  ⚠️ INSTALL WITH CAUTION');
     }
-    lines.push('═'.repeat(60));
+    lines.push(divider);
 
     return lines.join('\n');
   }
@@ -281,6 +265,15 @@ export class SecurityReporters {
       for (let i = 0; i < result.riskAssessment.recommendations.length; i++) {
         lines.push(`${i + 1}. ${result.riskAssessment.recommendations[i]}`);
       }
+      lines.push('');
+    }
+
+    if (!result.passed) {
+      lines.push('## Next Steps');
+      lines.push('');
+      lines.push(`1. \`sa scan <skill> --repair\``);
+      lines.push(`2. \`sa scan <skill> --repair --apply\``);
+      lines.push('3. Re-run scan after reviewing the repaired output');
       lines.push('');
     }
 

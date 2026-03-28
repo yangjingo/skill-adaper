@@ -27,6 +27,8 @@ sa scan [skillOrFile] [options]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-f, --format <format>` | Output format (text, json) | text |
+| `--repair` | Generate repaired copy and rescan (text mode only) | false |
+| `--apply` | Write repaired content back to the original file | false |
 
 ---
 
@@ -111,6 +113,7 @@ Examples:
    sa scan frontend-design
    sa scan ./my-skill/SKILL.md
    sa scan skill.json -f json
+   sa scan frontend-design --repair
 ```
 
 ### 2. Scan Imported Skill
@@ -229,6 +232,20 @@ sa scan docker-env -f json
   "recommendations": []
 }
 ```
+
+### 5. Auto Repair Failed Scan
+
+```bash
+sa scan frontend-design --repair --apply
+```
+
+Behavior:
+- Runs normal scan first
+- `--repair` without `--apply` creates a repaired copy `*.repaired.*`
+- `--repair --apply` writes the repaired content back to the original file
+- Re-scans the repaired target and prints before/after high-severity count
+- If the target is a skill directory, the repair writes to `SKILL.md` or `skill.md`
+- Works in text mode only (`--format json` will auto-switch to text)
 
 ---
 

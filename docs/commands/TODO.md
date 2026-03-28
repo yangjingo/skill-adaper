@@ -9,6 +9,8 @@
 - [x] Convert all Chinese hints to English in test documentation files
 - [x] Remove redundant documentation (quick-reference.md, 06-log.md)
 - [x] Sync `sa import` docs with simplified behavior and local Claude Code skill-name import
+- [x] Document that remote `sa import` is recommendation-only and no longer has direct `skills` runtime dependency
+- [x] Add ecosystem references/thanks for `skills.sh` and `https://clawhub.ai/`
 
 ---
 
@@ -20,7 +22,7 @@
 | [02-import.md](./02-import.md) | `sa import` | Import/discover skills |
 | [03-info.md](./03-info.md) | `sa info` | View skill information |
 | [04-evolve.md](./04-evolve.md) | `sa evolve` | Evolution analysis |
-| [05-scan.md](./05-scan.md) | `sa scan` | Security scan |
+| [05-scan.md](./05-scan.md) | `sa scan` | Security scan (`--repair` / `--apply`) |
 | [07-export.md](./07-export.md) | `sa export` | Export skills |
 | [08-share.md](./08-share.md) | `sa share` | Share skills |
 | [09-config.md](./09-config.md) | `sa config` | Configuration management |
@@ -44,5 +46,6 @@ sa info                  # List all skills
 sa import                # Discover hot skills
 sa evolve <skill-name>   # Analyze a skill
 sa scan <skill-name>     # Security scan
+sa scan <skill-name> --repair --apply   # Repair in place
 sa summary <skill-name>  # View evolution metrics
 ```

@@ -8,7 +8,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
-import ora from 'ora';
 import {
   SecurityScanResult,
   SecurityScanOptions,
@@ -187,14 +186,13 @@ export class SecurityEvaluator {
       permissionIssues
     );
 
-    // Determine if passed
-    let passed = true;
-    if (failOnHigh && riskAssessment.overallRisk === 'high') {
-      passed = false;
-    }
-    if (failOnMedium && (riskAssessment.overallRisk === 'high' || riskAssessment.overallRisk === 'medium')) {
-      passed = false;
-    }
+    const passed = this.determinePass(
+      riskAssessment,
+      sensitiveInfoFindings,
+      dangerousOperationFindings,
+      permissionIssues,
+      { failOnHigh, failOnMedium }
+    );
 
     const result: SecurityScanResult = {
       skillName,
@@ -244,7 +242,7 @@ export class SecurityEvaluator {
       callbacks?.onProgress?.('SA Agent analysis complete');
 
       // Step 3: Merge results
-      const mergedResult = this.mergeAgentResults(basicResult, agentAnalysis, skillName);
+      const mergedResult = this.mergeAgentResults(basicResult, agentAnalysis, skillName, options);
 
       return mergedResult;
     } catch (error: any) {
@@ -349,7 +347,8 @@ export class SecurityEvaluator {
   private mergeAgentResults(
     basicResult: SecurityScanResult,
     agentAnalysis: SAAgentSecurityAnalysis,
-    skillName: string
+    skillName: string,
+    options: SecurityScanOptions = {}
   ): SecurityScanResult {
     // Convert SA Agent findings to standard format
     const agentSensitiveFindings: SensitiveInfoFinding[] = agentAnalysis.newFindings
@@ -419,7 +418,13 @@ export class SecurityEvaluator {
       dangerousOperationFindings: [...filteredDangerous, ...agentDangerousFindings],
       permissionIssues: [...basicResult.permissionIssues, ...agentPermissionIssues],
       riskAssessment: agentRiskAssessment,
-      passed: agentAnalysis.riskAssessment.overallRisk !== 'high' && agentAnalysis.newFindings.filter(f => f.severity === 'high').length === 0
+      passed: this.determinePass(
+        agentRiskAssessment,
+        [...filteredSensitive, ...agentSensitiveFindings],
+        [...filteredDangerous, ...agentDangerousFindings],
+        [...basicResult.permissionIssues, ...agentPermissionIssues],
+        options
+      )
     };
 
     // Add SA Agent insights to the result (store in a custom field or log)
@@ -466,8 +471,52 @@ export class SecurityEvaluator {
       dangerousOperationFindings: allDangerousFindings,
       permissionIssues: allPermissionIssues,
       riskAssessment,
-      passed: riskAssessment.overallRisk !== 'high'
+      passed: this.determinePass(
+        riskAssessment,
+        allSensitiveFindings,
+        allDangerousFindings,
+        allPermissionIssues,
+        options
+      )
     };
+  }
+
+  /**
+   * Determine final pass/fail status from risk level + finding severities.
+   * Keeps behavior configurable via failOnHigh/failOnMedium, while ensuring
+   * high-severity findings cannot be marked as "passed" when failOnHigh is enabled.
+   */
+  private determinePass(
+    riskAssessment: RiskAssessment,
+    sensitiveInfoFindings: SensitiveInfoFinding[],
+    dangerousOperationFindings: DangerousOperationFinding[],
+    permissionIssues: PermissionIssue[],
+    options: SecurityScanOptions = {}
+  ): boolean {
+    const { failOnHigh = true, failOnMedium = false } = options;
+
+    const severities = [
+      ...sensitiveInfoFindings.map(f => f.severity),
+      ...dangerousOperationFindings.map(f => f.severity),
+      ...permissionIssues.map(f => f.severity)
+    ];
+
+    const hasHighFindings = severities.includes('high');
+    const hasMediumOrHighFindings = hasHighFindings || severities.includes('medium');
+
+    if (failOnHigh && (riskAssessment.overallRisk === 'high' || hasHighFindings)) {
+      return false;
+    }
+
+    if (failOnMedium && (
+      riskAssessment.overallRisk === 'high' ||
+      riskAssessment.overallRisk === 'medium' ||
+      hasMediumOrHighFindings
+    )) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
