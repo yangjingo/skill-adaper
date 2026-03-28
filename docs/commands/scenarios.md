@@ -145,22 +145,19 @@ Rank | Downloads | Source      | Skill
 ### 测试步骤
 
 ```bash
-# Step 1: 查看所有技能状态
-sa evolve
-
-# Step 2: 分析特定技能
+# Step 1: 分析特定技能
 sa evolve <skill-name>
 
-# Step 3: 查看详细分析
-sa evolve <skill-name> --detail
+# Step 2: 查看详细分析
+sa evolve <skill-name> --verbose
 
-# Step 4: 应用可自动化的优化
+# Step 3: 应用可自动化的优化
 sa evolve <skill-name> --apply
 
-# Step 5: 查看进化指标对比
+# Step 4: 查看进化指标对比
 sa summary <skill-name>
 
-# Step 6: 查看详细版本历史
+# Step 5: 查看详细版本历史
 sa log <skill-name>
 ```
 
@@ -543,7 +540,7 @@ sa import <skill> --no-npx 2>&1 | more
 cd /path/to/your/project
 
 # 查看详细分析
-sa evolve <skill> --detail
+sa evolve <skill> --verbose
 ```
 
 ### 问题 3: PR 创建失败

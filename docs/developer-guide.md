@@ -123,8 +123,12 @@ npm unlink -g skill-adapter
 # 测试模型配置和连接
 npx ts-node tests/test-model-connection.ts
 
-# 测试 AI 进化流程
-npx ts-node tests/test-evolve-streaming.ts
+# 测试 evolve CLI（精简版，无网络依赖）
+node dist/cli.js evolve --help
+node dist/cli.js evolve
+
+# 测试 AI 进化流程（需要可用模型配置）
+npx ts-node tests/test-sa-agent-evolution.ts
 ```
 
 ---
@@ -187,7 +191,9 @@ npm run test:registry
 | `test-versioning.js` | 版本管理 |
 | `test-registry.js` | Registry API |
 | `test-model-connection.ts` | AI 模型连接 |
-| `test-evolve-streaming.ts` | AI 进化流程 |
+| `node dist/cli.js evolve --help` | evolve CLI 参数与帮助校验（必跑） |
+| `node dist/cli.js evolve` | evolve 必填参数校验（必跑） |
+| `test-sa-agent-evolution.ts` | AI 进化流程（可选） |
 
 ---
 

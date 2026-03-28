@@ -186,27 +186,11 @@ Lines: 168
 
 ---
 
-### `sa evolve [skill]` - 进化分析
+### `sa evolve <skill>` - 进化分析
 
-**不带参数** - 显示所有技能概览：
-```bash
-sa evolve
-# 🔄 Running evolution analysis...
-#
-# Analyzing 3 skill(s)...
-#   • frontend-design: v1.0.0 (1 evolution(s))
-#   • hccn-tools: v1.0.0 (1 evolution(s))
-#
-# 📍 Workspace Analysis
-# Languages: TypeScript
-# Package Manager: npm
-#
-# 📌 下一步操作:
-#    sa evolve <skill-name>     # 分析具体技能
-#    sa import <skill-name>     # 导入新技能
-```
+`sa evolve` 现在必须传入技能名。
 
-**带参数** - 详细分析：
+**常用方式：**
 ```bash
 # 分析技能
 sa evolve my-skill
@@ -215,7 +199,7 @@ sa evolve my-skill
 sa evolve my-skill --apply
 
 # 显示详细信息
-sa evolve my-skill --detail
+sa evolve my-skill --verbose
 ```
 
 **分析输出**：

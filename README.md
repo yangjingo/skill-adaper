@@ -90,7 +90,7 @@ sa export docker-env         # Export specific skill
 | `sa init` | Initialize configuration |
 | `sa import [source]` | Import or discover skills |
 | `sa info [skill]` | View skill info (default: all platforms) |
-| `sa evolve [skill]` | Run evolution analysis |
+| `sa evolve <skill>` | Run evolution analysis |
 | `sa share [skill]` | Export or publish skill |
 | `sa export [skill]` | Export from platforms |
 | `sa scan [file]` | Security scan |
@@ -233,7 +233,7 @@ node dist/cli.js --help
 # Test commands
 node dist/cli.js info
 node dist/cli.js import
-node dist/cli.js evolve
+node dist/cli.js evolve docker-env
 ```
 
 ---
@@ -272,4 +272,5 @@ This project references and appreciates the following open-source ecosystems:
 ## License
 
 MIT
+
 

@@ -104,7 +104,7 @@ sa scan ~/.claude/skills/find-skills/SKILL.md
 在使用一段时间后，运行进化命令：
 
 ```bash
-sa evolve find-skills --last 10
+sa evolve find-skills
 ```
 
 #### 4. 查看效能总结
@@ -135,16 +135,16 @@ sa summary find-skills
 本项目参考并集成了以下开源项目：
 
 - **[skills.sh](https://skills.sh)** - Vercel Labs 开发的开放技能生态系统
-  - 本项目使用官方 `skills` CLI 进行技能发现和安装
-  - 部分发现 API 端点参考了 skills.sh 的实现
-  - 安装: `npm install skills` 或 `npx skills`
+  - 本项目将 skills.sh 作为发现与推荐来源（`sa import`）
+  - 不再依赖 `skills` 包作为运行时依赖
+  - 远端技能安装采用“推荐命令”模式（提示用户手动执行官方 CLI）
 
 ### 功能对照
 
 | 功能 | skill-adapter | skills CLI |
 |------|--------------|------------|
 | 技能发现 | ✅ `sa import` | ✅ `skills find` |
-| 技能安装 | ✅ 调用 skills CLI | ✅ `skills add` |
+| 技能安装 | ✅ 推荐命令（`npx skills add ...`） | ✅ `skills add` |
 | 安全扫描 | ✅ `sa scan` | ❌ |
 | 进化追踪 | ✅ `sa evolve` | ❌ |
 | 效能评估 | ✅ `sa summary` | ❌ |
@@ -155,3 +155,4 @@ sa summary find-skills
 ## 许可证
 
 MIT
+

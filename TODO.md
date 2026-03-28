@@ -6,11 +6,11 @@
 
 ```
 Total Items: 5
-Completed: 3 (60%)
+Completed: 4 (80%)
 Pending: 0
-Broken: 2
+Broken: 1
 
-Progress: ллллллллллАААААААААА 60% (In Progress)
+Progress: лллллллллллллллАААААА 80% (In Progress)
 ```
 
 ## Priority
@@ -37,6 +37,7 @@ P3 = Low       (Optional, can be deferred)
 
 ## Changelog
 
+**2026-03-28**: User completed evolve CLI test flow (`--help`, missing arg, unknown skill, tracked skill default/verbose/apply). `sa evolve` status updated to Completed.
 **2026-03-28**: User confirmed CLI tests passed for `sa share --pr` and `sa share --fork-pr`; master table status updated to Completed.
 **2026-03-28**: Docs/TODO aligned with new import behavior: remote `sa import` is recommendation-only; direct `skills` runtime dependency removed; added refs/thanks to skills.sh and [https://clawhub.ai/](https://clawhub.ai/)
 **2026-03-27**: `sa import` simplified flow verified (discover/recommend/local import) + local Claude Code skill name import fixed
@@ -64,6 +65,7 @@ P3 = Low       (Optional, can be deferred)
 | P2       | `sa log`             | yangjing | 2026-03-19 | `npx ts-node dist/cli.js log`                                      |
 | P2       | `sa config`          | yangjing | 2026-03-19 | `npx ts-node dist/cli.js config`                                   |
 | P0       | `sa import`          | yangjing | 2026-03-27 | `npx ts-node src/cli.ts import qa-only`                            |
+| P0       | `sa evolve`          | yangjing | 2026-03-28 | `node dist/cli.js evolve qa-only [--verbose|--apply]`              |
 | P1       | `sa share --pr`      | yangjing | 2026-03-28 | `node dist/cli.js share <skill> --repo <upstream> --yes`           |
 | P1       | `sa share --fork-pr` | yangjing | 2026-03-28 | `node dist/cli.js share <skill> --repo <upstream> --fork-pr --yes` |
 
@@ -71,7 +73,6 @@ P3 = Low       (Optional, can be deferred)
 
 | Priority | Feature     | Status | Notes                   | Test Command                              |
 | -------- | ----------- | ------ | ----------------------- | ----------------------------------------- |
-| P0       | `sa evolve` | Broken | Bug in recommend module | `npx ts-node dist/cli.js evolve <skill>` |
 | P1       | `sa scan`   | Broken | Streaming output broken | `npx ts-node dist/cli.js scan <skill>`   |
 
 

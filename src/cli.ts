@@ -18,8 +18,7 @@
  * - sa share <skill>     Share local skill by creating PR
  *
  * Evolution:
- * - sa evolve [skill]    Run evolution analysis (shows suggestions first)
- * - sa evolve [skill] --quick  Skip suggestions, start immediately
+ * - sa evolve <skill>    Run evolution analysis
  * - sa summary <skill>   View evolution metrics table
  * - sa log [skill]       View version history (git-log style)
  */
@@ -50,8 +49,18 @@ import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
 import { agentDetector } from './core/config';
 import { configManager, UserPreferences } from './core/config-manager';
+import {
+  loadTrackedSkill,
+  analyzeSkillStaticContent,
+  summarizeRecommendationPriorities,
+  printEvolutionNextSteps,
+  printRecommendationSummaryTable,
+  printEvolutionRuntimeStatus
+} from './core/evolution/cli-helpers';
 
 const program = new Command();
+program.showHelpAfterError();
+program.showSuggestionAfterError();
 
 // ANSI color codes for terminal output
 const COLORS = {
@@ -1380,294 +1389,91 @@ program
   });
 
 // ============================================
-// sa evolve [skill] - Evolution analysis
+// sa evolve <skill> - Evolution analysis
 // ============================================
 program
-  .command('evolve [skillName]')
-  .description('Find and adapt skill (auto-import if needed)')
-  .option('-l, --last <n>', 'Analyze last N sessions', '10')
+  .command('evolve <skillName>')
+  .description('Analyze and adapt a tracked skill')
+  .showHelpAfterError()
+  .showSuggestionAfterError()
   .option('--apply', 'Apply suggested improvements', false)
-  .option('--detail', 'Show detailed analysis', false)
-  .option('--dry-run', 'Preview changes without applying', false)
   .option('-v, --verbose', 'Show detailed output', false)
-  .option('--debug', 'Show full technical output', false)
-  .option('--quick', 'Skip suggestions and start evolution immediately', false)
-  .action(async (skillName: string | undefined, options: { last: string; apply: boolean; detail: boolean; dryRun: boolean; verbose: boolean; debug: boolean; quick: boolean }) => {
+  .action(async (skillName: string, options: { apply: boolean; verbose: boolean }) => {
     const db = new EvolutionDatabase();
-    const preferences = configManager.getPreferences();
-
-    // Context variables (used for fallback and legacy logic)
-    let soulContent = '';
-    let memoryContent = '';
-
-    // Determine output level
-    const outputLevel = options.debug ? 'debug' : options.verbose ? 'verbose' : preferences.outputLevel;
-    const isSimple = outputLevel === 'simple';
+    const isVerbose = options.verbose;
 
     // ═══════════════════════════════════════════
-    // No skill specified - show all skills + workspace analysis
+    // STEP 0: Load tracked skill (database only)
     // ═══════════════════════════════════════════
-    if (!skillName) {
-      const records = db.getAllRecords();
-
-      if (records.length === 0) {
-        console.log('No skills installed yet.');
-        console.log('Use `sa import <source>` to install a skill.');
-        return;
-      }
-
-      const skillNames = [...new Set(records.map(r => r.skillName))];
-
-      console.log(`Analyzing ${skillNames.length} skill(s)...\n`);
-
-      for (const name of skillNames) {
-        const skillRecords = db.getRecords(name);
-        const latest = skillRecords[skillRecords.length - 1];
-        console.log(`  • ${name}: v${db.getLatestVersion(name)} (${skillRecords.length} evolution(s))`);
-        console.log(`    Source: ${latest.importSource || 'unknown'}`);
-      }
-
-      // Workspace analysis
-      console.log('\n📍 Workspace Analysis');
-      console.log('─'.repeat(40));
-      try {
-        const workspaceAnalyzer = new WorkspaceAnalyzer(process.cwd());
-        const config = workspaceAnalyzer.analyze();
-        console.log(`Languages: ${config.techStack.languages.join(', ') || 'None'}`);
-        console.log(`Frameworks: ${config.techStack.frameworks.join(', ') || 'None'}`);
-        console.log(`Package Manager: ${config.techStack.packageManager}`);
-      } catch {
-        console.log('Workspace analysis not available');
-      }
-
-      console.log('\n📌 Next Steps:');
-      console.log('   sa evolve <skill-name>     # Analyze specific skill');
-      console.log('   sa import <skill-name>     # Import a new skill');
-      return;
-    }
-
-    // ═══════════════════════════════════════════
-    // STEP 0: Find Skill (multi-source with auto-import)
-    // ═══════════════════════════════════════════
-    interface SkillLocation {
-      content: string;
-      dir: string;
-      source: string;
-      foundInDb: boolean;
-      needsImport: boolean;
-    }
-
-    const findSkill = (name: string): SkillLocation | null => {
-      let skillContent = '';
-      let skillDir = '';
-      let skillSource = '';
-      let foundInDb = false;
-      let needsImport = false;
-
-      // 1. Check database first
-      const records = db.getRecords(name);
-      if (records.length > 0) {
-        foundInDb = true;
-        const latestRecord = records[records.length - 1];
-
-        // Check if skillPath exists (it's a directory, not file)
-        if (latestRecord.skillPath && fs.existsSync(latestRecord.skillPath)) {
-          // skillPath is the directory, need to find SKILL.md or skill.md inside
-          const skillMdPath = path.join(latestRecord.skillPath, 'SKILL.md');
-          const skillMdAltPath = path.join(latestRecord.skillPath, 'skill.md');
-
-          if (fs.existsSync(skillMdPath)) {
-            skillContent = fs.readFileSync(skillMdPath, 'utf-8');
-            skillDir = latestRecord.skillPath;
-            skillSource = latestRecord.importSource || 'database';
-          } else if (fs.existsSync(skillMdAltPath)) {
-            skillContent = fs.readFileSync(skillMdAltPath, 'utf-8');
-            skillDir = latestRecord.skillPath;
-            skillSource = latestRecord.importSource || 'database';
-          }
-        }
-
-        // Fallback: find by importSource if skill content not found
-        if (!skillContent && latestRecord.importSource) {
-          // Fallback: find by importSource
-          const importSource = latestRecord.importSource;
-
-          if (importSource.startsWith('OpenClaw:') || importSource.toLowerCase().includes('openclaw')) {
-            const openClawPath = findOpenClawSkillsPath();
-            if (openClawPath) {
-              let originalDir = name;
-              if (importSource.startsWith('OpenClaw:')) {
-                originalDir = importSource.split(':')[1] || name;
-              }
-              skillDir = path.join(openClawPath, originalDir);
-              const skillMdPath = path.join(skillDir, 'SKILL.md');
-              if (fs.existsSync(skillMdPath)) {
-                skillContent = fs.readFileSync(skillMdPath, 'utf-8');
-                skillSource = importSource;
-              }
-            }
-          }
-        }
-      }
-
-      // 2. If not found in DB, check OpenClaw directly
-      if (!skillContent) {
-        const openClawPath = findOpenClawSkillsPath();
-        if (openClawPath) {
-          const ocSkillDir = path.join(openClawPath, name);
-          const skillMdPath = path.join(ocSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillMdPath)) {
-            skillContent = fs.readFileSync(skillMdPath, 'utf-8');
-            skillDir = ocSkillDir;
-            skillSource = 'OpenClaw:' + name;
-            needsImport = !foundInDb;  // Found in OpenClaw but not in DB
-          }
-        }
-      }
-
-      // 3. Check Claude Code skills
-      if (!skillContent) {
-        const claudeCodePath = findClaudeCodeSkillsPath();
-        if (claudeCodePath) {
-          const ccSkillDir = path.join(claudeCodePath, 'skills', name);
-          const skillMdPath = path.join(ccSkillDir, 'skill.md');
-          if (fs.existsSync(skillMdPath)) {
-            skillContent = fs.readFileSync(skillMdPath, 'utf-8');
-            skillDir = ccSkillDir;
-            skillSource = 'ClaudeCode:' + name;
-            needsImport = !foundInDb;
-          }
-        }
-      }
-
-      if (!skillContent) return null;
-
-      return { content: skillContent, dir: skillDir, source: skillSource, foundInDb, needsImport };
-    };
-
-    // Find skill with spinner
-    const findSpinner = ora('Finding skill...').start();
-    const skillLocation = findSkill(skillName);
+    const skillLocation = loadTrackedSkill(db, skillName);
 
     if (!skillLocation) {
-      findSpinner.fail(`Skill "${skillName}" not found`);
-      console.log('\n📋 Search locations:');
-      console.log('   • Database: ~/.skill-adapter/evolution.jsonl');
-      console.log('   • OpenClaw: ~/.openclaw/skills/');
-      console.log('   • Claude Code: ~/.claude/skills/');
+      console.log(`Skill "${skillName}" not found in local tracking database.`);
       console.log('\n📌 Try:');
-      console.log('   sa info -p openclaw    # View OpenClaw skills');
-      console.log('   sa info -p claudecode  # View Claude Code skills');
+      console.log(`   sa import ${skillName}      # Import and track this skill first`);
+      console.log('   sa info                     # View tracked/importable skills');
       return;
     }
 
-    findSpinner.succeed(`Found: ${skillName} (${skillLocation.source.split(':')[0]})`);
+    console.log(`✅ Loaded: ${skillName}`);
 
     // Record usage
     configManager.recordSkillUsage(skillName);
 
-    const { content: skillContent, dir: skillDir, source: skillSource, foundInDb, needsImport } = skillLocation;
+    const { content: skillContent, dir: skillDir, filePath: skillFilePath, source: skillSource } = skillLocation;
 
     // ═══════════════════════════════════════════
-    // STEP 1: SA Agent Configuration
+    // STEP 1: SA Agent Configuration & Link Status
     // ═══════════════════════════════════════════
     const useAI = saAgentEvolutionEngine.isAvailable();
-    const modelInfo = saAgentEvolutionEngine.getModelInfo();
-
-    if (useAI) {
-      console.log('\n📋 SA Agent Configuration:');
-      console.log(`   ├─ Model: ${modelInfo.modelId}`);
-
-      // Load config to show endpoint
+    const modelStatus = modelConfigLoader.getStatus();
+    let maskedApiKey = '';
+    if (isVerbose) {
       const configResult = modelConfigLoader.load();
       if (configResult.success && configResult.config) {
-        const config = configResult.config;
-        console.log(`   ├─ Endpoint: ${config.baseUrl || 'https://api.anthropic.com (default)'}`);
-        console.log(`   └─ API Key: ${config.apiKey.slice(0, 10)}...${config.apiKey.slice(-4)}`);
+        const key = configResult.config.apiKey || '';
+        maskedApiKey = key.length > 14 ? `${key.slice(0, 10)}...${key.slice(-4)}` : '***';
       }
     }
+    printEvolutionRuntimeStatus({
+      configured: modelStatus.configured,
+      source: modelStatus.source,
+      model: modelStatus.model,
+      endpoint: modelStatus.endpoint,
+      maskedApiKey,
+      aiReady: useAI
+    }, isVerbose);
 
     // ═══════════════════════════════════════════
     // STEP 2: Skill Info
     // ═══════════════════════════════════════════
     console.log(`\n📄 Skill: ${skillName}`);
-    console.log(`   ├─ Source: ${skillSource}`);
-    console.log(`   ├─ Path: ${skillDir}`);
-    console.log(`   └─ Size: ${skillContent.length} bytes`);
-
-    if (foundInDb) {
-      console.log(`   Version: ${db.getLatestVersion(skillName)}`);
-    }
-    if (needsImport) {
-      console.log(`   📌 Will auto-import to database`);
+    console.log(`   Source: ${skillSource}`);
+    if (isVerbose) {
+      console.log(`   Path: ${skillDir}`);
+      console.log(`   File: ${path.basename(skillFilePath)}`);
+      console.log(`   Size: ${skillContent.length} bytes`);
     }
 
-    // ═══════════════════════════════════════════
-    // Smart Recommendations (unless --quick)
-    // ═══════════════════════════════════════════
-    if (!options.quick) {
-      console.log('\n' + '─'.repeat(50));
-      console.log('💡 Smart Recommendations');
-      console.log('─'.repeat(50));
-      console.log('   (Use --quick to skip this step)');
-
-      // Stream progress display
-      let progressText = '🔍 Analyzing skill...';
-      const progressInterval = setInterval(() => {
-        process.stdout.write('.');
-      }, 300);
-
-      // Run both tasks in parallel for better UX
-      const [aiSuggestion, relatedSkills] = await Promise.all([
-        // AI suggestion for skill improvement
-        useAI ? saAgentEvolutionEngine.getQuickSuggestion(skillContent) : Promise.resolve('Consider adding more examples and error handling'),
-        // Related skills from skills.sh
-        platformFetcher.search(skillName, { limit: 2, platforms: ['skills-sh'] }).catch(() => [] as RemoteSkill[])
-      ]);
-
-      clearInterval(progressInterval);
-      console.log(' ✓\n');
-
-      // Display AI suggestion
-      console.log(`   💡 Suggestion:`);
-      console.log(`      → ${aiSuggestion}`);
-
-      // Display related skills
-      if (relatedSkills.length > 0) {
-        console.log(`\n   🎯 Related skills:`);
-        relatedSkills.forEach(skill => {
-          console.log(`      • ${skill.name} (${skill.stats.downloads} downloads)`);
-        });
-      } else {
-        console.log(`\n   🎯 Related skills: (none found)`);
-      }
-
-      console.log('\n' + '─'.repeat(50));
-
-      // Give user a moment to see suggestions
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      console.log('\n🚀 Starting evolution...');
-    }
+    console.log(`   Version: ${db.getLatestVersion(skillName)}`);
 
     // ═══════════════════════════════════════════
     // STEP 3: Static Analysis
     // ═══════════════════════════════════════════
-    const staticSpinner = ora('📊 Analyzing static skill content...').start();
-    const lines = skillContent.split('\n');
-    const sections = (skillContent.match(/^##\s/gm) || []).length;
-    const codeBlocks = (skillContent.match(/```/g) || []).length / 2;
-    const links = (skillContent.match(/\[.*?\]\(.*?\)/g) || []).length;
+    const staticSpinner = isVerbose ? ora('📊 Analyzing static skill content...').start() : null;
+    const { sections, codeBlocks, links } = analyzeSkillStaticContent(skillContent);
 
-    staticSpinner.succeed('Static analysis complete');
-    console.log(`   ├─ Sections: ${sections}`);
-    console.log(`   ├─ Code blocks: ${Math.floor(codeBlocks)}`);
-    console.log(`   └─ Links: ${links}`);
+    if (staticSpinner) {
+      staticSpinner.succeed('Static analysis complete');
+      console.log(`   ├─ Sections: ${sections}`);
+      console.log(`   ├─ Code blocks: ${codeBlocks}`);
+      console.log(`   └─ Links: ${links}`);
+    }
 
     // ═══════════════════════════════════════════
     // STEP 4: Dynamic Context
     // ═══════════════════════════════════════════
-    const contextSpinner = ora('📂 Loading dynamic context...').start();
+    const contextSpinner = isVerbose ? ora('📂 Loading dynamic context...').start() : null;
 
     // Workspace info
     const workspaceAnalyzer = new WorkspaceAnalyzer(process.cwd());
@@ -1679,8 +1485,7 @@ program
     let saAgentRecommendations: SAAgentRecommendation[] = [];
 
     try {
-      const daysToAnalyze = parseInt(options.last) || 10;
-      evolutionContext = await evolutionEngine.buildEvolutionContext(skillName, daysToAnalyze);
+      evolutionContext = await evolutionEngine.buildEvolutionContext(skillName, 10);
     } catch {
       // Create basic context
       evolutionContext = {
@@ -1703,104 +1508,161 @@ program
       };
     }
 
-    const soulPrefs = evolutionContext.behaviorStyle.boundaries.length > 0 ||
-                      evolutionContext.behaviorStyle.preferences.length > 0;
-    const hasMemory = evolutionContext.memoryRules.length > 0;
-
-    contextSpinner.succeed('Dynamic context loaded');
-    console.log(`   ├─ SOUL preferences: ${soulPrefs ? '✓' : '✗'}`);
-    console.log(`   ├─ MEMORY rules: ${evolutionContext.memoryRules.length} rules`);
-    console.log(`   ├─ Workspace: ${workspaceConfig.techStack.languages.join(', ') || 'not detected'}`);
-    console.log(`   └─ Session patterns: ${evolutionContext.sessionPatterns.toolSequences.length} patterns`);
+    if (contextSpinner) {
+      const soulPrefs = evolutionContext.behaviorStyle.boundaries.length > 0 ||
+                        evolutionContext.behaviorStyle.preferences.length > 0;
+      contextSpinner.succeed('Dynamic context loaded');
+      console.log(`   ├─ SOUL preferences: ${soulPrefs ? '✓' : '✗'}`);
+      console.log(`   ├─ MEMORY rules: ${evolutionContext.memoryRules.length} rules`);
+      console.log(`   ├─ Workspace: ${workspaceConfig.techStack.languages.join(', ') || 'not detected'}`);
+      console.log(`   └─ Session patterns: ${evolutionContext.sessionPatterns.toolSequences.length} patterns`);
+    }
 
     // ═══════════════════════════════════════════
     // STEP 5: SA Agent Evolution with Streaming
     // ═══════════════════════════════════════════
-    console.log('\n' + '─'.repeat(60));
-    console.log('🤖 SA Agent Evolution Process');
-    console.log('─'.repeat(60) + '\n');
+    if (isVerbose) {
+      console.log('\n' + '─'.repeat(60));
+      console.log('🤖 SA Agent Evolution Process');
+      console.log('─'.repeat(60) + '\n');
+    } else {
+      console.log('\n' + '─'.repeat(60));
+      console.log('🤖 SA Agent Evolution');
+      console.log('─'.repeat(60));
+    }
 
-    const thinkingSpinner = ora('Connecting to SA Agent model...').start();
+    const spinnerEnabled = process.stdout.isTTY;
+    const thinkingSpinner = spinnerEnabled ? ora('🤖 SA Agent is helping evolve this skill...').start() : null;
     let thinkingBuffer = '';
     let thinkingStarted = false;
     let lineBuffer = ''; // Buffer for incomplete lines
+    let analysisFailed = false;
+    let spinnerClosed = false;
+
+    const closeSpinner = (status: 'succeed' | 'fail' | 'warn', text: string) => {
+      if (!spinnerClosed && thinkingSpinner) {
+        if (status === 'succeed') thinkingSpinner.succeed(text);
+        else if (status === 'fail') thinkingSpinner.fail(text);
+        else thinkingSpinner.warn(text);
+        spinnerClosed = true;
+      }
+    };
+
+    const isSeparatorLine = (line: string): boolean => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/^[─—–\-_=*#.~\s]+$/.test(trimmed)) return true;
+      if (/^(.)\1{2,}$/.test(trimmed)) return true;
+      if (trimmed.length <= 2 && /^[─—–\-_=*#.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return true;
+      return false;
+    };
 
     try {
-      saAgentRecommendations = await saAgentEvolutionEngine.generateRecommendations({
-        skillName,
-        skillContent,
-        soulPreferences: {
-          communicationStyle: evolutionContext.behaviorStyle.communicationStyle,
-          boundaries: evolutionContext.behaviorStyle.boundaries.slice(0, 3),
-        },
-        memoryRules: evolutionContext.memoryRules.slice(0, 5).map(r => ({
-          category: r.category,
-          rule: r.rule,
-        })),
-        workspaceInfo: {
-          languages: workspaceConfig.techStack.languages.slice(0, 3),
-          packageManager: workspaceConfig.techStack.packageManager,
-        },
-      }, {
-        onThinking: (text) => {
-          if (!thinkingStarted) {
-            thinkingSpinner.stop();
-            console.log('\n💭 SA Agent Thinking (streaming):\n');
-            console.log('─'.repeat(40));
-            thinkingStarted = true;
-          }
-          // Buffer text and output only complete lines
-          lineBuffer += text;
-          const lines = lineBuffer.split('\n');
-          // Keep the last incomplete line in buffer
-          lineBuffer = lines.pop() || '';
-
-          const filteredLines = lines.filter(line => {
-            const trimmed = line.trim();
-            if (!trimmed) return false;
-            // Skip separator lines (single or repeated separator chars)
-            if (/^[─—–\-_=*#.~\s]+$/.test(trimmed)) return false;
-            // Skip lines with 3+ repeated same character
-            if (/^(.)\1{2,}$/.test(trimmed)) return false;
-            // Skip very short separator-like lines
-            if (trimmed.length <= 2 && /^[─—–\-_=*#.~\s│┌┐└┘├┤┬┴┼]+$/.test(trimmed)) return false;
-            return true;
-          });
-          if (filteredLines.length > 0) {
-            process.stdout.write(filteredLines.join('\n') + '\n');
-          }
-          thinkingBuffer += text;
-        },
-        onContent: (text) => {
-          thinkingBuffer += text;
-        },
-        onComplete: () => {
-          // Output any remaining buffered content
-          if (lineBuffer.trim()) {
-            process.stdout.write(lineBuffer + '\n');
-            lineBuffer = '';
-          }
-          if (thinkingStarted) {
-            console.log('\n✅ Thinking complete!\n');
-          }
-        },
-      });
-
-      // Debug: Check if SA Agent generated recommendations
-      if (saAgentRecommendations.length === 0) {
-        console.log('⚠️ SA Agent generated 0 recommendations. Check if model output JSON correctly.\n');
+      if (!useAI) {
+        closeSpinner('warn', 'SA Agent unavailable, using rule-based engine');
+        console.log('⚠️ SA Agent model not configured. Falling back to rule-based recommendations.');
+        evolutionRecommendations = evolutionEngine.generateRecommendations(evolutionContext);
       } else {
+        if (!isVerbose) {
+          saAgentRecommendations = await saAgentEvolutionEngine.generateRecommendationsSync({
+            skillName,
+            skillContent,
+            soulPreferences: {
+              communicationStyle: evolutionContext.behaviorStyle.communicationStyle,
+              boundaries: evolutionContext.behaviorStyle.boundaries.slice(0, 3),
+            },
+            memoryRules: evolutionContext.memoryRules.slice(0, 5).map(r => ({
+              category: r.category,
+              rule: r.rule,
+            })),
+            workspaceInfo: {
+              languages: workspaceConfig.techStack.languages.slice(0, 3),
+              packageManager: workspaceConfig.techStack.packageManager,
+            },
+          });
+        } else {
+          saAgentRecommendations = await saAgentEvolutionEngine.generateRecommendations({
+            skillName,
+            skillContent,
+            soulPreferences: {
+              communicationStyle: evolutionContext.behaviorStyle.communicationStyle,
+              boundaries: evolutionContext.behaviorStyle.boundaries.slice(0, 3),
+            },
+            memoryRules: evolutionContext.memoryRules.slice(0, 5).map(r => ({
+              category: r.category,
+              rule: r.rule,
+            })),
+            workspaceInfo: {
+              languages: workspaceConfig.techStack.languages.slice(0, 3),
+              packageManager: workspaceConfig.techStack.packageManager,
+            },
+          }, {
+            onThinking: (text) => {
+              if (!isVerbose) return;
+              if (!thinkingStarted) {
+                if (spinnerEnabled && thinkingSpinner && !spinnerClosed) {
+                  thinkingSpinner.text = 'Connected. Streaming SA Agent thinking...';
+                } else {
+                  console.log('• Connected. Streaming SA Agent thinking...');
+                }
+                console.log('\n💭 SA Agent Thinking (streaming):\n');
+                console.log('─'.repeat(60));
+                thinkingStarted = true;
+              }
+              // Buffer text and output only complete lines
+              lineBuffer += text;
+              const lines = lineBuffer.split('\n');
+              // Keep the last incomplete line in buffer
+              lineBuffer = lines.pop() || '';
+
+              const filteredLines = lines.filter(line => !isSeparatorLine(line));
+              if (filteredLines.length > 0) {
+                process.stdout.write(filteredLines.join('\n') + '\n');
+              }
+              thinkingBuffer += text;
+            },
+            onContent: (text) => {
+              thinkingBuffer += text;
+            },
+            onComplete: () => {
+              if (!isVerbose) return;
+              // Output any remaining buffered content
+              if (lineBuffer.trim() && !isSeparatorLine(lineBuffer)) {
+                process.stdout.write(lineBuffer + '\n');
+                lineBuffer = '';
+              }
+              if (thinkingStarted) {
+                console.log('\n' + '─'.repeat(60));
+                console.log('\n✅ Thinking complete!\n');
+              }
+            },
+          });
+        }
+      }
+
+      if (!isVerbose) {
+        closeSpinner('succeed', 'Evolution recommendations ready');
+      } else if (!spinnerClosed && spinnerEnabled) {
+        closeSpinner('succeed', 'SA Agent evolution analysis complete');
+      }
+
+      if (isVerbose && saAgentRecommendations.length === 0) {
+        console.log('⚠️ SA Agent generated 0 recommendations. Check if model output JSON correctly.\n');
+      } else if (isVerbose) {
         console.log(`✅ Generated ${saAgentRecommendations.length} recommendation(s)\n`);
       }
 
     } catch (aiError) {
-      if (thinkingSpinner.isSpinning) {
-        thinkingSpinner.fail('SA Agent generation failed');
-      } else {
-        console.log('\n❌ SA Agent generation failed');
-      }
+      analysisFailed = true;
+      closeSpinner('fail', 'SA Agent evolution analysis failed');
       console.log('Falling back to rule-based recommendations...');
       evolutionRecommendations = evolutionEngine.generateRecommendations(evolutionContext);
+      if (spinnerEnabled && !spinnerClosed) {
+        closeSpinner('warn', 'Using rule-based fallback');
+      }
+      if (analysisFailed && isVerbose) {
+        console.log('⚠️ SA Agent deep analysis unavailable, fallback active.\n');
+      }
     }
 
     // ═══════════════════════════════════════════
@@ -1809,7 +1671,7 @@ program
     const allRecommendations = saAgentRecommendations.length > 0 ? saAgentRecommendations :
                                evolutionRecommendations.length > 0 ? evolutionRecommendations : [];
 
-    if (allRecommendations.length > 0) {
+    if (allRecommendations.length > 0 && isVerbose) {
       console.log('═'.repeat(60));
       console.log('📋 EVOLUTION RECOMMENDATIONS');
       console.log('═'.repeat(60) + '\n');
@@ -1843,21 +1705,15 @@ program
         }
       }
     }
+    if (!isVerbose) {
+      const summary = summarizeRecommendationPriorities(allRecommendations as Array<{ priority?: string }>);
+      printRecommendationSummaryTable(summary);
+    }
 
     // ═══════════════════════════════════════════
     // STEP 7: Next Tips
     // ═══════════════════════════════════════════
-    console.log('\n' + '═'.repeat(60));
-    console.log('📌 Next Steps');
-    console.log('═'.repeat(60) + '\n');
-
-    if (allRecommendations.length > 0) {
-      console.log('   sa evolve <skill> --apply    # Apply recommendations to skill');
-    }
-    console.log('   sa log <skill>               # View evolution history');
-    console.log('   sa summary <skill>           # View evolution metrics');
-    console.log('   sa export <skill>            # Export local skill package');
-    console.log('');
+    printEvolutionNextSteps(allRecommendations.length > 0);
 
     // ═══════════════════════════════════════════
     // STEP 8: Apply Optimizations (if --apply flag)
@@ -1865,7 +1721,7 @@ program
     let newContent = skillContent;
 
     if (options.apply && allRecommendations.length > 0) {
-      const applySpinner = ora('Applying recommendations...').start();
+      const applySpinner = isVerbose ? ora('Applying recommendations...').start() : null;
 
       for (const rec of allRecommendations) {
         const confidence = 'confidence' in rec ? rec.confidence : 0.7;
@@ -1882,10 +1738,14 @@ program
       }
 
       // Write updated content
-      const skillFilePath = path.join(skillDir, 'SKILL.md');
       fs.writeFileSync(skillFilePath, newContent, 'utf-8');
 
-      applySpinner.succeed(`Applied ${allRecommendations.filter(r => ('confidence' in r ? r.confidence : 0.7) >= 0.8).length} recommendations`);
+      const appliedCount = allRecommendations.filter(r => ('confidence' in r ? r.confidence : 0.7) >= 0.8).length;
+      if (applySpinner) {
+        applySpinner.succeed(`Applied ${appliedCount} recommendations`);
+      } else {
+        console.log(`✅ Applied ${appliedCount} recommendations`);
+      }
 
       // Record evolution
       const newRecord: EvolutionRecord = {
@@ -1910,7 +1770,7 @@ program
       console.log(`\n✅ ${skillName} evolved (1.0.0 → 1.1.0)`);
     }
 
-    console.log('\n🎉 Evolution analysis complete!\n');
+    console.log('\n✅ Evolution analysis complete.\n');
   });
 
 // ============================================
@@ -2406,7 +2266,7 @@ program
       console.log(`   📈 Version progressed from v${baseline.version} to v${latest.version} across ${records.length} evolution(s).`);
     } else {
       console.log('   ➖ No significant changes applied in recent evolutions.');
-      console.log('   💡 Run `sa evolve` to analyze and apply new optimizations.');
+      console.log('   💡 Run `sa evolve <skill>` to analyze and apply new optimizations.');
     }
 
     console.log('\n📌 Next Steps:');
