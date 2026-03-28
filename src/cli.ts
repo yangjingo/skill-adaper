@@ -43,7 +43,7 @@ import { saAgentEvolutionEngine, SAAgentRecommendation, modelConfigLoader } from
 // New modules
 import { securityEvaluator } from './core/security';
 import { skillExporter, shareByPr, DEFAULT_PR_REPO } from './core/sharing';
-import { platformFetcher, recommendationEngine, skillAnalyzer, skillsCli } from './core/discovery';
+import { platformFetcher, recommendationEngine, skillAnalyzer, skillsStore } from './core/discovery';
 import { RemoteSkill } from './types/discovery';
 import { versionManager } from './core/versioning';
 import { agentDetector } from './core/config';
@@ -64,6 +64,9 @@ const COLORS = {
   blue: '\x1b[34m',
   dim: '\x1b[2m',
 };
+
+const COMMUNITY_SKILLS_FEED_URL = 'https://github.com/leow3lab/ascend-skills';
+const COMMUNITY_CURATED_SKILLS_URL = 'https://github.com/leow3lab/awesome-ascend-skills';
 
 /**
  * Format platform source with color and bold
@@ -119,30 +122,7 @@ function parseSkillsShUrl(source: string): { pageUrl: string; githubRepo?: strin
   return null;
 }
 
-function parseSkillReference(source: string): { repoSlug: string; skill?: string } | null {
-  const trimmed = source.trim();
-
-  const atMatch = trimmed.match(/^([^/]+\/[^@]+)@([^/]+)$/);
-  if (atMatch) {
-    return { repoSlug: atMatch[1], skill: atMatch[2] };
-  }
-
-  const segments = trimmed.split('/').filter(Boolean);
-  if (segments.length === 3 && !/^https?:\/\//i.test(trimmed)) {
-    return {
-      repoSlug: `${segments[0]}/${segments[1]}`,
-      skill: segments[2]
-    };
-  }
-
-  if (segments.length === 2 && !/^https?:\/\//i.test(trimmed)) {
-    return { repoSlug: `${segments[0]}/${segments[1]}` };
-  }
-
-  return null;
-}
-
-function buildSkillsAddCommand(repoRef: string, skillName?: string): string {
+function buildManualInstallHint(repoRef: string, skillName?: string): string {
   const parts = [`npx skills add ${repoRef}`];
   if (skillName) {
     parts.push(`--skill ${skillName}`);
@@ -254,6 +234,118 @@ function getDefaultBranch(cwd: string): string {
   }
 
   return 'main';
+}
+
+interface ImportCommandOptions {
+  name?: string;
+  scan: boolean;
+  limit: string;
+}
+
+function printCommunityLinks(mode: 'radar' | 'targets'): void {
+  if (mode === 'radar') {
+    console.log('\n?? Community Radar:');
+    console.log(`   Shared skills feed: ${COMMUNITY_SKILLS_FEED_URL}`);
+    console.log(`   Curated list:       ${COMMUNITY_CURATED_SKILLS_URL}`);
+    console.log('\n? Your turn: polish one skill and share it with: sa share <skill-name>');
+    return;
+  }
+
+  console.log('\n?? Community Targets:');
+  console.log(`   ${COMMUNITY_SKILLS_FEED_URL}`);
+  console.log(`   ${COMMUNITY_CURATED_SKILLS_URL}`);
+}
+
+async function handleImportDiscoverMode(limitText: string): Promise<void> {
+  console.log('?? Discovering hot skills from skills.sh...\n');
+
+  try {
+    const limit = parseInt(limitText);
+    const results = await platformFetcher.fetchHot('skills-sh', limit);
+    if (results.length > 0) {
+      console.log('Rank | Downloads | Skill');
+      console.log('-'.repeat(50));
+      for (const entry of results) {
+        console.log(`#${entry.rank.toString().padEnd(4)} | ${entry.skill.stats.downloads.toString().padEnd(9)} | ${entry.skill.name}`);
+      }
+    } else {
+      console.log('  (No data available)');
+    }
+
+    console.log('\n?? Next Steps:');
+    console.log('   sa import <skill>            # Install a skill');
+    console.log('   sa import <owner/repo>       # Install from skills.sh');
+  } catch (error) {
+    console.error(`? Failed to fetch skills: ${error}`);
+  }
+}
+
+function resolveImportSource(source: string): { source: string; isLocalPath: boolean; isOpenClawSkill: boolean } {
+  let resolvedSource = source;
+  let isLocalPath = fs.existsSync(resolvedSource);
+
+  const isOpenClawSkill = (() => {
+    const openClawPath = findOpenClawSkillsPath();
+    if (openClawPath) {
+      const localSkillDir = path.join(openClawPath, resolvedSource);
+      return fs.existsSync(localSkillDir) && fs.statSync(localSkillDir).isDirectory();
+    }
+    return false;
+  })();
+
+  if (!isLocalPath) {
+    const claudeCodePath = findClaudeCodeSkillsPath();
+    if (claudeCodePath) {
+      const localClaudeSkillDir = path.join(claudeCodePath, 'skills', resolvedSource);
+      const hasSkillMd = fs.existsSync(path.join(localClaudeSkillDir, 'skill.md'));
+      const hasSkillMdUpper = fs.existsSync(path.join(localClaudeSkillDir, 'SKILL.md'));
+      if (fs.existsSync(localClaudeSkillDir) && fs.statSync(localClaudeSkillDir).isDirectory() && (hasSkillMd || hasSkillMdUpper)) {
+        console.log('?? Found local Claude Code skill\n');
+        resolvedSource = localClaudeSkillDir;
+        isLocalPath = true;
+      }
+    }
+  }
+
+  return { source: resolvedSource, isLocalPath, isOpenClawSkill };
+}
+
+async function handleImportRecommendOnly(source: string): Promise<void> {
+  const query = source.startsWith('http://') || source.startsWith('https://')
+    ? (source.split('/').filter(Boolean).pop() || source)
+    : source;
+  const searchUrl = `https://skills.sh/?q=${encodeURIComponent(query)}`;
+
+  console.log('?? Searching on skills.sh...\n');
+  console.log(`   ${searchUrl}\n`);
+
+  const [searchResults, hotResults] = await Promise.all([
+    platformFetcher.search(query, { limit: 5 }).catch(() => [] as RemoteSkill[]),
+    platformFetcher.fetchHot('skills-sh', 5).catch(() => [] as Array<{ rank: number; skill: RemoteSkill }>)
+  ]);
+
+  if (searchResults.length > 0) {
+    console.log('?? Recommendations:');
+    for (const [idx, result] of searchResults.entries()) {
+      console.log(`  ${idx + 1}. ${result.name} (${result.stats.downloads} downloads)`);
+      if (result.url) {
+        console.log(`     ${result.url}`);
+      }
+    }
+  } else {
+    console.log('?? Recommendations: none');
+  }
+
+  if (hotResults.length > 0) {
+    console.log('\n?? Trending:');
+    for (const entry of hotResults) {
+      console.log(`  #${entry.rank} ${entry.skill.name} (${entry.skill.stats.downloads} downloads)`);
+    }
+  }
+
+  console.log('\n?? This command no longer auto-downloads remote skills.');
+  console.log('   Install manually if needed: npx skills add <repo> --skill <name>');
+  printCommunityLinks('radar');
 }
 
 // Configuration - supports env vars and config file
@@ -415,249 +507,19 @@ program
   .option('-n, --name <name>', 'Rename skill on import')
   .option('--no-scan', 'Skip security scan')
   .option('-l, --limit <number>', 'Limit results when discovering', '10')
-  .action(async (source: string | undefined, options: { name?: string; scan: boolean; limit: string }) => {
-    // No source provided - show hot skills (discover mode)
+  .action(async (source: string | undefined, options: ImportCommandOptions) => {
     if (!source) {
-      console.log('🔥 Discovering hot skills from skills.sh...\n');
-
-      try {
-        const limit = parseInt(options.limit);
-        const results = await platformFetcher.fetchHot('skills-sh', limit);
-        if (results.length > 0) {
-          console.log('Rank | Downloads | Skill');
-          console.log('-'.repeat(50));
-          for (const entry of results) {
-            console.log(`#${entry.rank.toString().padEnd(4)} | ${entry.skill.stats.downloads.toString().padEnd(9)} | ${entry.skill.name}`);
-          }
-        } else {
-          console.log('  (No data available)');
-        }
-
-        console.log('\n📌 Next Steps:');
-        console.log('   sa import <skill>            # Install a skill');
-        console.log('   sa import <owner/repo>       # Install from skills.sh');
-      } catch (error) {
-        console.error(`❌ Failed to fetch skills: ${error}`);
-      }
+      await handleImportDiscoverMode(options.limit);
       return;
     }
 
-    // Source provided - import mode
-    console.log(`📥 Getting skill from: ${source}\n`);
+    console.log(`?? Getting skill from: ${source}\n`);
+    const resolved = resolveImportSource(source);
+    source = resolved.source;
 
-    // Check if it's a local file/directory first
-    let isLocalPath = fs.existsSync(source);
-    const isOpenClawSkill = (() => {
-      const openClawPath = findOpenClawSkillsPath();
-      if (openClawPath) {
-        const localSkillDir = path.join(openClawPath, source);
-        return fs.existsSync(localSkillDir) && fs.statSync(localSkillDir).isDirectory();
-      }
-      return false;
-    })();
-    if (!isLocalPath) {
-      const claudeCodePath = findClaudeCodeSkillsPath();
-      if (claudeCodePath) {
-        const localClaudeSkillDir = path.join(claudeCodePath, 'skills', source);
-        const hasSkillMd = fs.existsSync(path.join(localClaudeSkillDir, 'skill.md'));
-        const hasSkillMdUpper = fs.existsSync(path.join(localClaudeSkillDir, 'SKILL.md'));
-        if (fs.existsSync(localClaudeSkillDir) && fs.statSync(localClaudeSkillDir).isDirectory() && (hasSkillMd || hasSkillMdUpper)) {
-          console.log('🔍 Found local Claude Code skill\n');
-          source = localClaudeSkillDir;
-          isLocalPath = true;
-        }
-      }
-    }
-
-    if (!isLocalPath && !isOpenClawSkill) {
-      const query = source.startsWith('http://') || source.startsWith('https://')
-        ? (source.split('/').filter(Boolean).pop() || source)
-        : source;
-      const searchUrl = `https://skills.sh/?q=${encodeURIComponent(query)}`;
-
-      console.log('🔎 Searching on skills.sh...\n');
-      console.log(`   ${searchUrl}\n`);
-
-      const [searchResults, hotResults] = await Promise.all([
-        platformFetcher.search(query, { limit: 5 }).catch(() => [] as RemoteSkill[]),
-        platformFetcher.fetchHot('skills-sh', 5).catch(() => [] as Array<{ rank: number; skill: RemoteSkill }>)
-      ]);
-
-      if (searchResults.length > 0) {
-        console.log('🎯 Recommendations:');
-        for (const [idx, result] of searchResults.entries()) {
-          console.log(`  ${idx + 1}. ${result.name} (${result.stats.downloads} downloads)`);
-          if (result.url) {
-            console.log(`     ${result.url}`);
-          }
-        }
-      } else {
-        console.log('🎯 Recommendations: none');
-      }
-
-      if (hotResults.length > 0) {
-        console.log('\n🔥 Trending:');
-        for (const entry of hotResults) {
-          console.log(`  #${entry.rank} ${entry.skill.name} (${entry.skill.stats.downloads} downloads)`);
-        }
-      }
-
-      console.log('\n📌 This command no longer auto-downloads remote skills.');
-      console.log('   Install manually if needed: npx skills add <repo> --skill <name>');
+    if (!resolved.isLocalPath && !resolved.isOpenClawSkill) {
+      await handleImportRecommendOnly(source);
       return;
-    }
-
-    // Official CLI import flow is disabled in simplified mode.
-    const isSkillsShSource = /^https?:\/\/skills\.sh\//i.test(source);
-    const useOfficialCli = false;
-
-    let sourceUrl = 'https://skills.sh';
-
-    if (useOfficialCli) {
-      console.log('🔧 Installing with official skills CLI...\n');
-      try {
-        let skillName = source;
-        let repoRef = source;
-        const skillsShUrl = parseSkillsShUrl(source);
-        const skillRef = parseSkillReference(source);
-
-        // Direct skills.sh skill page or shorthand reference
-        if (skillsShUrl?.githubRepo && skillsShUrl.skill) {
-          repoRef = `https://github.com/${skillsShUrl.githubRepo}`;
-          skillName = skillsShUrl.skill;
-          console.log('   Source: https://skills.sh');
-          console.log(`   URL: ${skillsShUrl.pageUrl}`);
-          console.log('');
-        } else if (skillsShUrl?.skill) {
-          console.log('   Source: https://skills.sh');
-          console.log(`   URL: ${skillsShUrl.pageUrl}`);
-          console.log(`   Skill: ${skillsShUrl.skill}`);
-          const searchResult = await (skillsCli as any).find(skillsShUrl.skill, { limit: 3 });
-          if (searchResult.success && searchResult.results.length > 0) {
-            const found = searchResult.results[0];
-            skillName = found.skill;
-            repoRef = found.package;
-            console.log(`   Installs: ${found.installs.toLocaleString()}`);
-            console.log('');
-          } else {
-            console.log('');
-          }
-        } else if (skillRef) {
-          repoRef = `https://github.com/${skillRef.repoSlug}`;
-          if (skillRef.skill) {
-            skillName = skillRef.skill;
-          }
-          console.log('   Source: https://skills.sh');
-          console.log(`   URL: ${skillsShUrl?.pageUrl || `https://skills.sh/${skillRef.repoSlug}${skillRef.skill ? `/${skillRef.skill}` : ''}`}\n`);
-        } else {
-          // Skill name - search with the official CLI
-          const searchResult = await (skillsCli as any).find(source, { limit: 3 });
-
-          if (searchResult.success && searchResult.results.length > 0) {
-            const found = searchResult.results[0];
-            skillName = found.skill;
-            repoRef = found.package;
-            console.log('   Source: https://skills.sh');
-            console.log(`   Skill: ${found.skill}`);
-            console.log(`   Installs: ${found.installs.toLocaleString()}`);
-            const discoveredUrl = found.url || `https://skills.sh/${found.repository}/${found.skill}`;
-            console.log(`   URL: ${discoveredUrl}`);
-            console.log('');
-          } else {
-            // Not found - try the provided source directly with the official CLI
-            console.log(`   Skill "${source}" not found in official skills search, trying direct install...\n`);
-          }
-        }
-
-        // Use SkillsCliWrapper for installation
-        const addOptions = skillName !== source ? { skill: skillName, yes: true } : { yes: true };
-        console.log(`   Command: ${buildSkillsAddCommand(repoRef, addOptions.skill)}`);
-        const result = await skillsCli.add(repoRef, addOptions);
-        const finalSkillName = (result.skillName || skillName || '').trim();
-        if (!finalSkillName) {
-          throw new Error('Could not determine installed skill name');
-        }
-
-        if (result.success) {
-          console.log('\n✅ Installation complete!\n');
-
-          // Step 2: Security scan (unless --no-scan)
-          let securityPassed = true;
-          if (options.scan) {
-            console.log('🔒 Running security scan...\n');
-            const skillContent = await skillsCli.getSkillContent(finalSkillName);
-
-            if (skillContent) {
-              const scanContent: string = skillContent;
-              const scanResult = securityEvaluator.scan(scanContent, finalSkillName);
-
-              if (scanResult.passed) {
-                console.log('   ✅ Security scan passed\n');
-              } else {
-                securityPassed = false;
-                console.log('   ⚠️  Security issues detected:\n');
-                const allFindings = [
-                  ...scanResult.sensitiveInfoFindings.map(f => ({ severity: f.severity, type: f.type })),
-                  ...scanResult.dangerousOperationFindings.map(f => ({ severity: f.severity, type: f.type }))
-                ];
-                for (const issue of allFindings) {
-                  console.log(`   - ${issue.severity.toUpperCase()}: ${issue.type}`);
-                }
-                console.log('\n   💡 Review issues before using this skill\n');
-              }
-            } else {
-              console.log('   ⚠️  Could not read skill content for scanning\n');
-            }
-          }
-
-          // Step 3: Track in evolution database
-          const db = new EvolutionDatabase();
-          const skillPath = skillsCli.getSkillPath(finalSkillName);
-
-          db.addRecord({
-            id: `import_${Date.now()}`,
-            skillName: finalSkillName,
-            version: '1.0.0',
-            timestamp: new Date(),
-            telemetryData: JSON.stringify({
-              source: repoRef,
-              installedAt: new Date().toISOString(),
-              securityPassed,
-              description: 'Initial import from skills.sh'
-            }),
-            patches: '[]',
-            importSource: `skills.sh:${repoRef}`,
-            securityPassed,
-            skillPath: skillPath || undefined
-          });
-
-          console.log('📊 Tracking enabled for evolution analysis\n');
-
-          // Step 4: Friendly next steps
-          console.log('📌 Next Steps:');
-          console.log(`   sa info ${finalSkillName}       # View skill details`);
-          console.log(`   sa scan ${finalSkillName}       # Run detailed security scan`);
-          console.log(`   sa evolve ${finalSkillName}     # Analyze and optimize`);
-          return;
-
-        } else {
-          console.error(`\n⚠️  Official skills CLI failed: ${result.output}\n`);
-          const command = (result as any).command;
-          if (command) {
-            console.log(`   Command: ${command}`);
-          }
-          if (isSkillsShSource) {
-            return;
-          }
-          console.log('💡 Falling back to built-in import...\n');
-        }
-      } catch (error) {
-        // Official CLI failed - provide helpful error
-        console.error('\n⚠️  Official CLI unavailable, falling back to built-in import.\n');
-        if (isSkillsShSource) {
-          return;
-        }
-      }
     }
 
     const db = new EvolutionDatabase();
@@ -679,7 +541,7 @@ program
           const registrySkill = parseSkillsShUrl(source);
           if (registrySkill?.githubRepo && registrySkill.skill) {
             const commandRepo = `https://github.com/${registrySkill.githubRepo}`;
-            console.log(`   Command: ${buildSkillsAddCommand(commandRepo, registrySkill.skill)}`);
+            console.log(`   Command: ${buildManualInstallHint(commandRepo, registrySkill.skill)}`);
           }
 
           // Extract skill name from URL
@@ -965,7 +827,7 @@ program
         skillPath: skillPath || undefined
       });
 
-      const sourceLabel = sourceType === 'skills-sh' ? sourceUrl : getSourceLabel(sourceType, source).split(':')[0];
+      const sourceLabel = getSourceLabel(sourceType, source).split(':')[0];
       console.log(`\n✅ Installed successfully!`);
       console.log(`   Skill: ${skillPackage.manifest.name} (v${skillPackage.manifest.version})`);
       console.log(`   Source: ${sourceLabel}`);
@@ -2082,6 +1944,7 @@ program
       console.log('\nNext Steps:');
       console.log('   sa share <skill-name>      # Create PR');
       console.log('   sa export <skill-name>     # Export local package');
+      printCommunityLinks('targets');
       return;
     }
 
@@ -2136,9 +1999,12 @@ program
     });
     if (!shareOk) {
       process.exitCode = 1;
+    } else {
+      console.log('\n🌟 Nice share. More places to discover & submit:');
+      console.log(`   Discover: ${COMMUNITY_SKILLS_FEED_URL}`);
+      console.log(`   Curated:  ${COMMUNITY_CURATED_SKILLS_URL}`);
     }
   });
-
 // ============================================
 // sa export [skill] - Export local skill package
 // ============================================
@@ -2781,7 +2647,7 @@ program
       }
 
       // NEW: Show skills installed via official skills CLI
-      const installedSkills = await skillsCli.list();
+      const installedSkills = await skillsStore.list();
       if (installedSkills.length > 0) {
         console.log('── skills.sh (Official CLI) ──');
         for (const skill of installedSkills) {
@@ -2903,10 +2769,10 @@ program
 
       // NEW: Check skills installed via official skills CLI
       if (!skillContent) {
-        const installedContent = await skillsCli.getSkillContent(skillOrFile);
+        const installedContent = await skillsStore.getSkillContent(skillOrFile);
         if (installedContent) {
           skillContent = installedContent;
-          skillPath = skillsCli.getSkillPath(skillOrFile) || '';
+          skillPath = skillsStore.getSkillPath(skillOrFile) || '';
           skillSource = 'skills.sh (installed)';
         }
       }
@@ -3325,5 +3191,9 @@ if (process.argv.length === 2) {
 }
 
 program.parse(normalizeCliArgs(process.argv));
+
+
+
+
 
 

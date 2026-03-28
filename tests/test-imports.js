@@ -63,6 +63,9 @@ test('import with query should be recommendation-only', () => {
   assert(output.includes('Searching on skills.sh'), 'missing search banner');
   assert(output.includes('https://skills.sh/?q=find-skills'), 'missing skills.sh query link');
   assert(output.includes('no longer auto-downloads remote skills'), 'missing recommend-only notice');
+  assert(output.includes('Community Radar'), 'missing community radar section');
+  assert(output.includes('https://github.com/leow3lab/ascend-skills'), 'missing community feed link');
+  assert(output.includes('https://github.com/leow3lab/awesome-ascend-skills'), 'missing curated community link');
   assert(!output.includes('Installing with official skills CLI'), 'should not invoke official CLI flow');
   assert(!output.includes('Downloading from registry'), 'should not download from registry');
 });
@@ -72,6 +75,9 @@ test('import with skills.sh URL should still be recommendation-only', () => {
   assert(output.includes('Searching on skills.sh'), 'missing search banner for skills.sh URL');
   assert(output.includes('https://skills.sh/?q=migrate-to-vinext'), 'missing parsed search link from URL');
   assert(output.includes('no longer auto-downloads remote skills'), 'missing recommend-only notice');
+  assert(output.includes('Community Radar'), 'missing community radar section');
+  assert(output.includes('https://github.com/leow3lab/ascend-skills'), 'missing community feed link');
+  assert(output.includes('https://github.com/leow3lab/awesome-ascend-skills'), 'missing curated community link');
   assert(!output.includes('Installing with official skills CLI'), 'should not invoke official CLI flow');
 });
 

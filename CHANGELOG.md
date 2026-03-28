@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-03-28
+
+### Changed
+- `sa import` remote flow no longer depends on the `skills` package runtime.
+- Remote input now enters recommendation-only mode (search + trending + manual install hint).
+- Added community guidance links in CLI output:
+  - https://github.com/leow3lab/ascend-skills
+  - https://github.com/leow3lab/awesome-ascend-skills
+
+### Docs
+- Updated docs/TODO to clarify that this version removed direct skills dependency and keeps recommendation behavior.
+- Added/updated references and acknowledgments for:
+  - https://skills.sh
+  - https://clawhub.ai/
+
 ## [0.1.2] - 2026-03-26
 
 ### Added

@@ -63,8 +63,12 @@ Shows:
 - Search link: `https://skills.sh/?q=<query>`
 - Recommended matches
 - Trending skills
+- Community references for discovering/sharing:
+  - https://github.com/leow3lab/ascend-skills
+  - https://github.com/leow3lab/awesome-ascend-skills
 
 No automatic download is performed.
+This version intentionally removes direct runtime dependency on `skills`.
 
 ---
 
@@ -75,3 +79,10 @@ If you decide to install a remote skill, use the official CLI manually:
 ```bash
 npx skills add <github-repo> --skill <skill-name>
 ```
+
+---
+
+## References and Thanks
+
+- skills.sh: https://skills.sh
+- ClawHub: https://clawhub.ai/
