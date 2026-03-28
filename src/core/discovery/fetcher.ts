@@ -142,8 +142,7 @@ export class PlatformFetcher {
 
       this.setCache(cacheKey, content);
       return content;
-    } catch (error) {
-      console.error(`Failed to fetch skill content: ${error}`);
+    } catch {
       return '';
     }
   }

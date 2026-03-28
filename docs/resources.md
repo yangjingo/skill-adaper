@@ -4,9 +4,10 @@
 
 | 平台 | URL | 说明 |
 |------|-----|------|
-| **ClawHub** | https://clawhub.ai/skills | 开源技能生态系统 |
+| **ClawHub** | https://clawhub.ai/ | 开源技能生态系统 |
 | **skills.sh** | https://skills.sh | Vercel 官方技能目录 |
-| **EvoMap** | https://evomap.ai | AI Self-Evolution 基础设施 |
+
+> Note: current sa import uses recommendation mode for remote sources and no longer depends on skills at runtime.
 
 ## 官方 CLI
 

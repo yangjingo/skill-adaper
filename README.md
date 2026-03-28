@@ -249,19 +249,20 @@ node dist/cli.js evolve
 
 ## Acknowledgments
 
-This project integrates and references the following open-source projects:
+This project references and appreciates the following open-source ecosystems:
 
 - **[skills.sh](https://skills.sh)** - Open skill ecosystem by Vercel Labs
-  - This project uses the official `skills` CLI for skill discovery and installation
-  - Some discovery API endpoints reference the skills.sh implementation
-  - Install: `npm install skills` or `npx skills`
+  - Used as a discovery/recommendation source in `sa import`
+  - Skill-Adapter no longer depends on the `skills` package at runtime
+- **[ClawHub](https://clawhub.ai/)** - Community skill hub
+  - Referenced as part of the community ecosystem and sharing context
 
 ### Feature Comparison
 
 | Feature | skill-adapter | skills CLI |
 |---------|--------------|------------|
 | Skill Discovery | ✅ `sa import` | ✅ `skills find` |
-| Skill Installation | ✅ calls skills CLI | ✅ `skills add` |
+| Skill Installation | ? manual recommendation (`npx skills add ...`) | ? `skills add` |
 | Security Scanning | ✅ `sa scan` | ❌ |
 | Evolution Tracking | ✅ `sa evolve` | ❌ |
 | Performance Metrics | ✅ `sa summary` | ❌ |
@@ -271,3 +272,4 @@ This project integrates and references the following open-source projects:
 ## License
 
 MIT
+

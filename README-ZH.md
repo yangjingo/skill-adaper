@@ -1,5 +1,13 @@
 # Skill-Adapter
 
+## 版本说明（2026-03-28）
+
+- 本版本移除了对 `skills` 包的运行时依赖。
+- `sa import` 对远端输入改为推荐模式（搜索 + 热门 + 手动安装提示），不再自动远端下载。
+- 生态引用与致谢：
+  - skills.sh: https://skills.sh
+  - ClawHub: https://clawhub.ai/
+
 > **让技能在你的工作空间中进化。**
 
 `Skill-Adapter` 是一个为 **Claude Code** 和 **OpenClaw** 设计的进化管理层。它不仅负责 Skill 的本地化适配，更通过 **Workspace 规则感知**与 **Session 行为回溯**，实现工具能力的自我迭代与效能评估。
