@@ -11,6 +11,7 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "ts-node src/cli.ts",
+    "slides": "node scripts/slides.js",
     "setup:gh": "node scripts/setup-gh.js",
     "test": "node tests/run-tests.js",
     "test:all": "node tests/run-tests.js --with-share-pr",
